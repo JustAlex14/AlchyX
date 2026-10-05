@@ -1,0 +1,148 @@
+plugins {
+    id 'java-library'
+    id 'maven-publish'
+    id 'idea'
+    id 'net.neoforged.moddev' version '2.0.141'
+}
+
+version = mod_version
+group = mod_group_id
+
+repositories {
+    mavenLocal()
+    // KubeJS (optional integration, compat/kubejs): its Minecraft 26.1 builds are only on Modrinth, so they come
+    // from Modrinth's Maven (maven.modrinth:<slug>:<Modrinth version number>). That Maven doesn't pull in a mod's
+    // own dependencies, so Rhino (KubeJS's JavaScript engine) and Better Advanced Tooltips are listed below too.
+    exclusiveContent {
+        forRepository {
+            maven {
+                name = "Modrinth"
+                url = "https://api.modrinth.com/maven"
+            }
+        }
+        filter {
+            includeGroup "maven.modrinth"
+        }
+    }
+    // JEI (optional integration, compat/jei)
+    exclusiveContent {
+        forRepository {
+            maven {
+                name = "BlameJared"
+                url = "https://maven.blamejared.com"
+            }
+        }
+        filter {
+            includeGroup "mezz.jei"
+            includeGroup "net.mezzdev.config"
+            includeGroup "vazkii.patchouli"
+        }
+    }
+}
+
+// Mods only for AlchyX's own dev runs (runClient here): not passed on to projects that use AlchyX
+configurations {
+    localRuntime
+    runtimeClasspath.extendsFrom localRuntime
+}
+
+dependencies {
+    // KubeJS: compile against it (and Rhino, whose types its API uses) for the optional plugin; loaded with its
+    // required mods in AlchyX's dev runs to test script machines. Versions: https://modrinth.com/mod/kubejs/versions
+    compileOnly "maven.modrinth:kubejs:${kubejs_version}"
+    compileOnly "maven.modrinth:rhino:${rhino_version}"
+    localRuntime "maven.modrinth:kubejs:${kubejs_version}"
+    localRuntime "maven.modrinth:rhino:${rhino_version}"
+    localRuntime "maven.modrinth:better-advanced-tooltips:${bat_version}"
+
+    // Patchouli: every multiblock pattern becomes a Patchouli multiblock ("multiblock_id" in book pages) + the
+    // AlchyX manual (optional for players). Versions: https://maven.blamejared.com/vazkii/patchouli/patchouli-neoforge/
+    compileOnly "vazkii.patchouli:patchouli-neoforge:${patchouli_version}"
+    localRuntime "vazkii.patchouli:patchouli-neoforge:${patchouli_version}"
+
+    // JEI: recipe category for script machines (optional for players)
+    compileOnly "mezz.jei:jei-${jei_minecraft_version}-common-api:${jei_version}"
+    compileOnly "mezz.jei:jei-${jei_minecraft_version}-neoforge-api:${jei_version}"
+    localRuntime "mezz.jei:jei-${jei_minecraft_version}-neoforge:${jei_version}"
+}
+
+base {
+    archivesName = mod_id
+}
+
+java.toolchain.languageVersion = JavaLanguageVersion.of(25)
+// Sources jar: mods using AlchyX see its documented code in the IDE
+java.withSourcesJar()
+
+neoForge {
+    version = project.neo_version
+
+    runs {
+        client {
+            client()
+            systemProperty 'neoforge.enabledGameTestNamespaces', project.mod_id
+        }
+        server {
+            server()
+            gameDirectory = project.file('run-server')
+            programArgument '--nogui'
+            systemProperty 'neoforge.enabledGameTestNamespaces', project.mod_id
+        }
+        configureEach {
+            systemProperty 'forge.logging.markers', 'REGISTRIES'
+            logLevel = org.slf4j.event.Level.DEBUG
+        }
+    }
+
+    mods {
+        "${mod_id}" {
+            sourceSet(sourceSets.main)
+        }
+    }
+}
+
+var generateModMetadata = tasks.register("generateModMetadata", ProcessResources) {
+    var replaceProperties = [
+            minecraft_version      : minecraft_version,
+            minecraft_version_range: minecraft_version_range,
+            neo_version            : neo_version,
+            neo_version_range      : neo_version_range,
+            loader_version_range   : loader_version_range,
+            mod_id                 : mod_id,
+            mod_name               : mod_name,
+            mod_license            : mod_license,
+            mod_version            : mod_version,
+            mod_authors            : mod_authors,
+            mod_description        : mod_description
+    ]
+    inputs.properties replaceProperties
+    expand replaceProperties
+    from "src/main/templates"
+    into "build/generated/sources/modMetadata"
+}
+sourceSets.main.resources.srcDir generateModMetadata
+neoForge.ideSyncTask generateModMetadata
+
+// AlchyMastery uses AlchyX through a Gradle composite build (includeBuild '../AlchyX' in its settings.gradle), so
+// nothing has to be published while developing. To release: ./gradlew publish (writes ./repo, a Maven folder that
+// can be uploaded anywhere) or publishToMavenLocal.
+publishing {
+    publications {
+        register('mavenJava', MavenPublication) {
+            artifactId = mod_id
+            from components.java
+        }
+    }
+    repositories {
+        maven {
+            url "file://${project.projectDir}/repo"
+        }
+    }
+}
+
+idea {
+    module {
+        downloadSources = true
+        downloadJavadoc = true
+    }
+}

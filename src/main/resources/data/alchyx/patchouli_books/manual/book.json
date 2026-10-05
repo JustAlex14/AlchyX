@@ -1,0 +1,10 @@
+{
+  "name": "item.alchyx.manual",
+  "landing_text": "info.alchyx.manual.landing",
+  "version": 1,
+  "creative_tab": "alchyx:main",
+  "use_resource_pack": true,
+  "i18n": true,
+  "model": "patchouli:book_blue",
+  "show_progress": false
+}

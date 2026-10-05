@@ -1,0 +1,33 @@
+{
+  "name": "Multiblock Machines",
+  "icon": "minecraft:stone_bricks",
+  "category": "alchyx:basics",
+  "sortnum": 0,
+  "pages": [
+    {
+      "type": "patchouli:text",
+      "title": "Cores and Structures",
+      "text": "A machine is a $(item)core$() block surrounded by a structure of ordinary blocks. Place the core, then build the structure shown on the machine's page around it.$(br2)When everything is right, the core $(thing)forms$() the machine: a wave runs through the blocks and turns them into its parts."
+    },
+    {
+      "type": "patchouli:text",
+      "title": "Previews",
+      "text": "Every machine page has a 3D preview. Press $(thing)Visualize$(), then look at a placed core: the missing blocks appear as ghosts in the world, turned the way the core faces.$(br2)Machines with a front turn with their core, which faces you when placed, like a furnace."
+    },
+    {
+      "type": "patchouli:text",
+      "title": "Using a Machine",
+      "text": "Right-click the core or any part to open the machine. Sneak to place blocks against it instead.$(br2)Hoppers, pipes and cables work on every part: items and fluids go in and out, energy goes in."
+    },
+    {
+      "type": "patchouli:text",
+      "title": "Breaking",
+      "text": "$(4)Breaking any part breaks the whole machine$(): its parts vanish without drops. Only the core stays, with what it holds.$(br2)The $(item)Structure Builder$() places a core's whole structure at once."
+    },
+    {
+      "type": "patchouli:crafting",
+      "recipe": "alchyx:structure_builder",
+      "text": "Right-click a machine core: the structure is built from the blocks in your inventory. If anything is missing, it tells you what instead, and it never breaks blocks in the way. Free in creative."
+    }
+  ]
+}

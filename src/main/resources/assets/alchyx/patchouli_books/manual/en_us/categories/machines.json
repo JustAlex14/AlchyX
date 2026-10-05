@@ -1,0 +1,6 @@
+{
+  "name": "Machines",
+  "description": "The machines of this world. Each page shows its structure: press Visualize, then look at a placed core.",
+  "icon": "minecraft:crafting_table",
+  "sortnum": 1
+}

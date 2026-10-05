@@ -1,0 +1,16 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "category": "equipment",
+  "pattern": [
+    " EL",
+    "DBE",
+    "BD "
+  ],
+  "key": {
+    "B": "minecraft:breeze_rod",
+    "D": "minecraft:diamond",
+    "E": "minecraft:echo_shard",
+    "L": "minecraft:recovery_compass"
+  },
+  "result": { "id": "alchyx:structure_builder" }
+}

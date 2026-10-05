@@ -1,9 +1,12 @@
 modLoader="javafml"
 loaderVersion="${loader_version_range}"
 license="${mod_license}"
+issueTrackerURL="https://github.com/JustAlex14/AlchyX/issues"
 
 [[mods]]
 modId="${mod_id}"
+logoFile="alchyx.png"
+displayURL="https://github.com/JustAlex14/AlchyX"
 version="${mod_version}"
 displayName="${mod_name}"
 authors="${mod_authors}"

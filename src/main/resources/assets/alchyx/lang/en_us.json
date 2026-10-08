@@ -4,5 +4,6 @@
   "itemGroup.alchyx": "AlchyX",
   "item.alchyx.manual": "Machine Manual",
   "info.alchyx.manual.landing": "A field guide to the multiblock machines of this world: how to build them, and the structure of each one.",
-  "tooltip.alchyx.upgrade": "Goes in a machine's upgrade tab"
+  "tooltip.alchyx.upgrade": "Goes in a machine's upgrade tab",
+  "config.jade.plugin_alchyx.machine_name": "Machine names on formed parts"
 }

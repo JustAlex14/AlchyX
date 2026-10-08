@@ -80,6 +80,7 @@ public final class AnimationEngine {
         long lastOpStart;
         int lastOpCount;
         final int[] counters;
+        final int[] steps; // per "block_state" effect: the step its blocks show now, -1 for their own look
         final List<Pending> pending = new ArrayList<>();
         final List<Move> moves = new ArrayList<>();
         final Map<Target, List<BlockPos>> selectors = new HashMap<>();
@@ -89,6 +90,8 @@ public final class AnimationEngine {
             this.def = def;
             this.generation = generation;
             this.counters = new int[def.effects().size()];
+            this.steps = new int[def.effects().size()];
+            Arrays.fill(steps, -1);
         }
     }
 
@@ -145,6 +148,7 @@ public final class AnimationEngine {
             clearMoves(level, rt);
             rt.pending.clear();
             Arrays.fill(rt.counters, 0);
+            Arrays.fill(rt.steps, -1);
             rt.seen = false;
             return;
         }
@@ -165,6 +169,11 @@ public final class AnimationEngine {
             Effect effect = effects.get(i);
             if (effect instanceof Effect.FloatingItem) continue; // drawn every frame, see onExtract
             Timing timing = effect.timing();
+            if (!timing.where().machine()) continue; // only for miniatures of this machine
+            if (effect instanceof Effect.StateSteps steps) {
+                stateSteps(level, core, rt, i, steps, working, now);
+                continue;
+            }
             boolean fire;
             if (timing.when().continuous()) {
                 if (timing.when().holds(working)) {
@@ -203,8 +212,27 @@ public final class AnimationEngine {
             case Effect.Particle particle -> particles(level, core, rt, rotation, particle);
             case Effect.Sound sound -> sound(level, core, rt, rotation, sound);
             case Effect.BlockMove move -> startMoves(level, core, rt, rotation, move, now);
+            case Effect.StateSteps steps -> { } // followed every tick (stateSteps)
             case Effect.FloatingItem item -> { }
             case Effect.Figure figure -> { } // drawn every frame (onExtract)
+        }
+    }
+
+    /**
+     * A "block_state" effect on a machine in the world: its formed parts (shells) wear the step's look, like a
+     * block move's "swap". Blocks that aren't shells (the core itself) draw themselves, so nothing is done to them.
+     */
+    private static void stateSteps(ClientLevel level, MultiblockCoreBlockEntity core, Runtime rt, int index, Effect.StateSteps effect,
+                                   boolean working, long now) {
+        boolean holds = effect.holds(working) && effect.timing().levelsMet(core::getAnimationLevel);
+        int step = holds ? effect.index(core.getAnimationProgress(now)) : -1;
+        if (step == rt.steps[index]) return;
+        rt.steps[index] = step;
+        Rotation rotation = MultiblockPattern.rotationFor(rt.def.front(), core.getBlockState());
+        for (BlockPos pos : blocks(level, core, rt, rotation, effect.targets())) {
+            if (level.getBlockEntity(pos) instanceof ChamberShellBlockEntity shell) {
+                shell.setClientLook(step < 0 ? null : BlockLook.apply(shell.getDisguise(), effect.steps().get(step)));
+            }
         }
     }
 
@@ -316,7 +344,7 @@ public final class AnimationEngine {
     }
 
     /** A pattern-space vector turned like BlockPos.rotate. */
-    private static Vec3 rotate(Vec3 v, Rotation rotation) {
+    static Vec3 rotate(Vec3 v, Rotation rotation) {
         return switch (rotation) {
             case CLOCKWISE_90 -> new Vec3(-v.z, v.y, v.x);
             case CLOCKWISE_180 -> new Vec3(-v.x, v.y, -v.z);
@@ -342,19 +370,19 @@ public final class AnimationEngine {
         };
     }
 
-    private static Direction towardCore(BlockPos core, BlockPos pos) {
+    static Direction towardCore(BlockPos core, BlockPos pos) {
         int dx = core.getX() - pos.getX(), dy = core.getY() - pos.getY(), dz = core.getZ() - pos.getZ();
         if (dx == 0 && dz == 0) return dy >= 0 ? Direction.UP : Direction.DOWN;
         return Direction.getApproximateNearest(dx, 0, dz);
     }
 
-    private static @Nullable Direction facingOf(BlockState state) {
+    static @Nullable Direction facingOf(BlockState state) {
         Property<?> property = state.getBlock().getStateDefinition().getProperty("facing");
         return property != null && state.getValue(property) instanceof Direction direction ? direction : null;
     }
 
     @SuppressWarnings("unchecked")
-    private static BlockState withFacing(BlockState state, Direction direction) {
+    static BlockState withFacing(BlockState state, Direction direction) {
         Property<?> property = state.getBlock().getStateDefinition().getProperty("facing");
         if (property != null && property.getValueClass() == Direction.class
                 && ((Property<Direction>) property).getPossibleValues().contains(direction)) {
@@ -404,6 +432,7 @@ public final class AnimationEngine {
             boolean working = core.isAnimationWorking();
             List<Effect> effects = rt.def.effects();
             for (int i = 0; i < effects.size(); i++) {
+                if (!effects.get(i).timing().where().machine()) continue; // only for miniatures of this machine
                 if (effects.get(i) instanceof Effect.Figure figure) {
                     List<Vec3> at = positions(level, core, rt, rotation, figure.at());
                     if (at.isEmpty() || !figure.timing().levelsMet(core::getAnimationLevel)) continue; // "min_level"

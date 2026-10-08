@@ -33,6 +33,7 @@ machine is formed, and only for players within 64 blocks.
 | `chance` | 1 | 0 to 1, chance to run each time |
 | `delay` | 0 | ticks to wait after the trigger (e.g. a sound 5 ticks after a piston extends) |
 | `min_level` | | only while the machine's named levels are at least this much, e.g. `{"corruption": 4}` (machines publish them with `setAnimationLevel`; AlchyMastery: `corruption` = the sum of the installed upgrade tiers) |
+| `where` | `everywhere` | `everywhere`, `machine` (only on the machine standing in the world) or `miniature` (only in miniatures of it, see the end of this page) |
 
 ## Positions
 
@@ -108,6 +109,26 @@ Another use: a glitch, where every block of a kind twitches for a few ticks once
  "min_level": {"corruption": 9}}
 ```
 
+## `block_state`
+
+Changes the look of blocks while `when` holds (`always`, `idle`, `working`), step by step through the operation. The
+rest of the time the blocks look as they are.
+
+```json
+{"type": "block_state", "when": "working", "targets": {"block": "minecraft:brewing_stand"},
+ "steps": [{"has_bottle_0": true}, {"has_bottle_0": true, "has_bottle_1": true},
+           {"has_bottle_0": true, "has_bottle_1": true, "has_bottle_2": true}]}
+```
+
+| Field | Default | Meaning |
+|---|---|---|
+| `targets` | required | the blocks (a block selector, an anchor or `core`) |
+| `steps` | required | a list of state values: the first shows as the operation begins, the last as it ends. One step = that look for as long as `when` holds |
+
+On a machine in the world this changes formed parts (the same way as a block move's `swap`). A core block draws
+itself, so a core that changes look does it in its own code there, and gives its file a `block_state` with
+`"where": "miniature"` for the miniatures.
+
 ## `item`
 
 Draws an item the machine displays (each machine names its displays; AlchyMastery: `input` on the
@@ -156,8 +177,10 @@ It's only drawn: no AI, no collision, no sounds of its own (add `sound` effects 
 | `ghost` | `false` | see-through, like an invisible mob seen by a spectator (entities) |
 | `display` / `unless_display` | | only while the machine's display of that name holds an item / is empty |
 
-Mods register coded figures with `Figures.register(id, (context, poseStack, collector) -> ...)` during client setup
-(see `CodedFigure`), and can draw a machine's figures elsewhere (a miniature) with `FigureDrawer.prepare` / `submit`.
+Mods register coded figures with `Figures.register(id, (context, poseStack, collector, camera) -> ...)` during client
+setup (see `CodedFigure`). A coded figure doesn't have to be a body: anything a block draws with its own code (a book,
+an orb, a conduit) can be one, so the file places it and a miniature shows it. The context gives what it may depend
+on (the display, working, time, light) and an `owner` to keep what it remembers between frames per machine. Mods can draw a machine's figures elsewhere (a miniature) with `FigureDrawer.prepare` / `submit`.
 
 ## For mod developers
 
@@ -165,3 +188,30 @@ A machine core block entity extends `MultiblockCoreBlockEntity` and feeds the an
 `setAnimationWorking(boolean)`, `startAnimationOperation(ticks)`, `finishAnimationOperation()`,
 `setAnimationDisplay("input", stack)`. Everything else is in the file. Example: AlchyMastery's
 `data/alchymastery/machine_animation/destructuration_chamber.json`.
+
+### The same file inside a miniature
+
+A mod that shows a machine in small (a nexus showing the machines it absorbed, a farm's preview) plays the machine's
+animation file in that small copy with `MiniatureAnimation` (client): no second animation to write.
+
+```java
+// once per miniature: the animation, the miniature's blocks by cell (counted from the core, turned like the
+// miniature), its anchors turned the same way (or null), that turn, and which kinds of effects to play
+MiniatureAnimation animation = new MiniatureAnimation(ClientAnimations.get(patternId), looks, null, Rotation.NONE,
+        MiniatureAnimation.Plays.ALL);
+// leave animation.changingCells() out of the miniature's fixed mesh (a piston's base while its head is out)
+
+// every frame, in the pose where 1 unit = 1 block of the miniature and the origin is the core cell's lowest corner:
+MiniatureAnimation.Frame frame = animation.prepare(level, owner, state, lightPos, time, partialTicks);
+MiniatureAnimation.submit(frame, poseStack, collector, camera);
+```
+
+`state` says whether the machine works, how far its operation is, when one starts or finishes (for `when` = `start` /
+`finish`), and what its displays hold. `block_move`, `block_state`, `item` and `figure` are drawn in the miniature.
+Effects marked `"where": "machine"` are left out, those marked `"where": "miniature"` only play here. `particle` and
+`sound` leave the picture for the world, so they need to know where the miniature stands: pass a `Placement` as the
+last argument of `prepare` (a function from miniature points to world positions, and the size of one miniature block).
+Particles then spawn at the right spot with their spread and speed shrunk (their own size stays the particle's), and
+sounds play there, quieter the smaller the miniature. `Plays.PICTURE` leaves both out, `Plays.ALL` plays everything.
+The animation only advances while it is prepared, so a miniature nobody draws is still and silent.
+The blocks themselves are a `BlockBox` drawn through a `BoxMesh` (see the miniature kit).

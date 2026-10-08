@@ -22,7 +22,7 @@ import java.util.Optional;
  * One effect of a machine animation file. "type" picks the kind; every kind also takes the {@link Timing} fields
  * (when, interval, chance, delay). Positions are {@link Target}s. All effects run on the client only.
  */
-public sealed interface Effect permits Effect.Particle, Effect.Sound, Effect.BlockMove, Effect.FloatingItem, Effect.Figure {
+public sealed interface Effect permits Effect.Particle, Effect.Sound, Effect.BlockMove, Effect.StateSteps, Effect.FloatingItem, Effect.Figure {
 
     Timing timing();
 
@@ -38,12 +38,13 @@ public sealed interface Effect permits Effect.Particle, Effect.Sound, Effect.Blo
             case "particle" -> Particle.MAP_CODEC;
             case "sound" -> Sound.MAP_CODEC;
             case "block_move" -> BlockMove.MAP_CODEC;
+            case "block_state" -> StateSteps.MAP_CODEC;
             case "item" -> FloatingItem.MAP_CODEC;
             case "figure" -> Figure.MAP_CODEC;
             default -> null;
         };
         return codec != null ? DataResult.success(codec)
-                : DataResult.error(() -> "unknown effect type \"" + type + "\" (particle, sound, block_move, item, figure)");
+                : DataResult.error(() -> "unknown effect type \"" + type + "\" (particle, sound, block_move, block_state, item, figure)");
     }
 
     /** "minecraft:end_rod", or a full particle object ({"type": "minecraft:dust", "color": [1, 0, 1], "scale": 1}). */
@@ -198,6 +199,37 @@ public sealed interface Effect permits Effect.Particle, Effect.Sound, Effect.Blo
         @Override
         public String type() {
             return "item";
+        }
+    }
+
+    // ---- block state ----
+
+    /**
+     * Changes the look of every "targets" block while "when" holds (always / idle / working), step by step through
+     * the operation: "steps" is a list of state values, the first shown as the operation begins, the last as it ends
+     * (a brewing stand whose bottles fill one by one). A single step is simply that look while "when" holds. The rest
+     * of the time the blocks look as they are.
+     */
+    record StateSteps(Timing timing, Target targets, List<Map<String, String>> steps) implements Effect {
+        public static final MapCodec<StateSteps> MAP_CODEC = RecordCodecBuilder.mapCodec(instance -> instance.group(
+                Timing.MAP_CODEC.forGetter(StateSteps::timing),
+                Target.CODEC.fieldOf("targets").forGetter(StateSteps::targets),
+                BlockLook.STATE.listOf(1, 64).fieldOf("steps").forGetter(StateSteps::steps)
+        ).apply(instance, StateSteps::new));
+
+        /** Which step shows at this point (0 to 1) of the operation. */
+        public int index(float progress) {
+            return Math.max(0, Math.min(steps.size() - 1, (int) (progress * steps.size())));
+        }
+
+        /** Whether the steps show now ("start" and "finish" make no sense here: they count as "working"). */
+        public boolean holds(boolean working) {
+            return timing.when().continuous() ? timing.when().holds(working) : working;
+        }
+
+        @Override
+        public String type() {
+            return "block_state";
         }
     }
 

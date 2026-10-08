@@ -24,6 +24,11 @@ public class AlchyXClient {
         if (net.neoforged.fml.ModList.get().isLoaded("patchouli")) {
             net.neoforged.neoforge.common.NeoForge.EVENT_BUS.addListener(
                     com.lealex.alchyx.compat.patchouli.BookReadingClient::onScreenInit);
+            // Books whose paper changes with the chapter (client/BookPapers)
+            net.neoforged.neoforge.common.NeoForge.EVENT_BUS.addListener(
+                    com.lealex.alchyx.compat.patchouli.BookPapersClient::onClientTick);
+            net.neoforged.neoforge.common.NeoForge.EVENT_BUS.addListener(
+                    com.lealex.alchyx.compat.patchouli.BookPapersClient::onScreenInit);
         }
     }
 

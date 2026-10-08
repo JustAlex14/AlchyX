@@ -68,7 +68,7 @@ public final class FigureDrawer {
         float lift = effect.hover() + (effect.bob() == 0 ? 0 : Mth.sin(time * 0.08F) * effect.bob());
         int light = LevelRenderer.getLightCoords(level, BlockPos.containing(feet.add(0, 0.5, 0)));
         ItemStack display = effect.display().map(displays).orElse(ItemStack.EMPTY);
-        CodedFigure.Context context = new CodedFigure.Context(display, working, time, light);
+        CodedFigure.Context context = new CodedFigure.Context(display, working, time, light, owner, feet, yaw, partialTicks);
 
         if (effect.figure().isPresent()) {
             CodedFigure coded = Figures.get(effect.figure().get());
@@ -142,7 +142,7 @@ public final class FigureDrawer {
             Minecraft.getInstance().getEntityRenderDispatcher().submit(figure.entity(), camera, 0, 0, 0, poseStack, collector);
         } else if (figure.coded() != null) {
             poseStack.mulPose(Axis.YP.rotationDegrees(180.0F - figure.yaw()));
-            figure.coded().submit(figure.context(), poseStack, collector);
+            figure.coded().submit(figure.context(), poseStack, collector, camera);
         }
         poseStack.popPose();
     }

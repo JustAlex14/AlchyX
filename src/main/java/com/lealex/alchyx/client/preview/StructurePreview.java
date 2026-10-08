@@ -2,6 +2,7 @@ package com.lealex.alchyx.client.preview;
 
 import com.lealex.alchyx.AlchyX;
 import com.lealex.alchyx.block.entity.MultiblockCoreBlockEntity;
+import com.lealex.alchyx.item.MachineTool;
 import com.lealex.alchyx.menu.CoreMenu;
 import com.lealex.alchyx.multiblock.MultiblockPattern;
 import com.lealex.alchyx.multiblock.MultiblockPatterns;
@@ -17,6 +18,9 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.particles.DustParticleOptions;
 import net.minecraft.network.chat.Component;
 import net.minecraft.util.context.ContextKey;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.world.MenuProvider;
+import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.level.block.Rotation;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.Vec3;
@@ -27,6 +31,7 @@ import net.neoforged.neoforge.client.event.ClientTickEvent;
 import net.neoforged.neoforge.client.event.ExtractLevelRenderStateEvent;
 import net.neoforged.neoforge.client.event.ScreenEvent;
 import net.neoforged.neoforge.client.event.SubmitCustomGeometryEvent;
+import net.neoforged.neoforge.event.entity.player.PlayerInteractEvent;
 import org.jspecify.annotations.Nullable;
 
 import java.util.ArrayList;
@@ -39,6 +44,7 @@ import java.util.Set;
 /**
  * Structure preview for machines that aren't formed: small ghost blocks show what's missing around the core, red
  * dust marks wrong blocks. Opening an unformed machine's GUI turns it on; a button on the GUI turns it on and off.
+ * A core without a GUI shows it on right-click and hides it on sneak + right-click.
  * It switches itself off once the machine forms (or the core is gone). Client only, per player.
  */
 @EventBusSubscriber(modid = AlchyX.MODID, value = Dist.CLIENT)
@@ -98,6 +104,22 @@ public final class StructurePreview {
 
     private static Component label(BlockPos pos) {
         return Component.literal(isShown(pos) ? "Hide structure" : "Show structure");
+    }
+
+    // ---- Cores without a GUI: the click itself shows the structure ----
+
+    @SubscribeEvent
+    public static void onRightClickBlock(PlayerInteractEvent.RightClickBlock event) {
+        if (!event.getLevel().isClientSide() || event.getHand() != InteractionHand.MAIN_HAND) return;
+        if (event.getItemStack().getItem() instanceof MachineTool || event.getItemStack().getItem() instanceof BlockItem) return;
+        BlockPos pos = event.getPos();
+        if (!(event.getLevel().getBlockEntity(pos) instanceof MultiblockCoreBlockEntity core)) return;
+        if (core.isFormed() || core instanceof MenuProvider) return;
+        if (event.getEntity().isShiftKeyDown()) {
+            if (isShown(pos)) toggle(pos);
+        } else if (!isShown(pos)) {
+            toggle(pos);
+        }
     }
 
     // ---- Keeping the missing blocks up to date ----

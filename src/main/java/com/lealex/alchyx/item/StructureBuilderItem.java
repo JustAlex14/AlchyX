@@ -77,6 +77,13 @@ public class StructureBuilderItem extends Item implements MachineTool {
             BlockState current = level.getBlockState(pos);
             if (ShellParts.isPart(current) || placement.satisfiedBy(current)) continue; // formed, or already right
             if (free) {
+                // Creative replaces what stands in the way, but never what nothing is meant to break (bedrock, a
+                // barrier, the shell of a pocket room...): that would be gone for good
+                if (!current.isAir() && current.getDestroySpeed(level, pos) < 0) {
+                    inTheWay++;
+                    if (firstInTheWay == null) firstInTheWay = pos;
+                    continue;
+                }
                 todo.add(placement);
                 continue;
             }

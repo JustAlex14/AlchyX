@@ -148,7 +148,7 @@ public class AlchyXJeiPlugin implements IModPlugin {
         public void draw(MachineRecipe recipe, IRecipeSlotsView slots, GuiGraphicsExtractor graphics, double mouseX, double mouseY) {
             int ticks = recipe.time();
             String text = (ticks % 20 == 0 ? ticks / 20 + " s" : String.format("%.1f s", ticks / 20.0))
-                    + (recipe.energy() > 0 ? " · " + recipe.energy() + " FE" : "");
+                    + (recipe.energy() > 0 ? ", " + recipe.energy() + " FE" : "");
             graphics.text(Minecraft.getInstance().font, text, 2, 56, TEXT, false);
         }
     }

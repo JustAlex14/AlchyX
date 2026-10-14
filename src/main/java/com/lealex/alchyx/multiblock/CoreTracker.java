@@ -25,6 +25,10 @@ import java.util.Map;
 public final class CoreTracker {
     private static final Map<ResourceKey<Level>, Map<BlockPos, Identifier>> CORES = new HashMap<>();
     private static final Map<ResourceKey<Level>, Long2ObjectMap<List<BlockPos>>> BY_CHUNK = new HashMap<>();
+    // Cores whose structure is not in their pattern (Enclosure): how far around them a block change concerns them.
+    // Empty unless a mod has such cores, and then matricesNear looks no further than the widest of them.
+    private static final Map<ResourceKey<Level>, Map<BlockPos, Integer>> WATCH = new HashMap<>();
+    private static int widestWatch = 0;
 
     private CoreTracker() {}
 
@@ -42,7 +46,19 @@ public final class CoreTracker {
         }
     }
 
+    /**
+     * A tracked core also hears of block changes within {@code reach} blocks of it along x and z, on its own level
+     * and the one above and below (see MultiblockCoreBlockEntity.watchReach).
+     */
+    public static void watch(Level level, BlockPos pos, int reach) {
+        if (reach <= 0) return;
+        WATCH.computeIfAbsent(level.dimension(), key -> new HashMap<>()).put(pos.immutable(), reach);
+        widestWatch = Math.max(widestWatch, reach);
+    }
+
     public static void remove(Level level, BlockPos pos) {
+        Map<BlockPos, Integer> watching = WATCH.get(level.dimension());
+        if (watching != null) watching.remove(pos);
         Map<BlockPos, Identifier> cores = CORES.get(level.dimension());
         if (cores == null || cores.remove(pos) == null) return;
         Long2ObjectMap<List<BlockPos>> chunks = BY_CHUNK.get(level.dimension());
@@ -55,13 +71,16 @@ public final class CoreTracker {
         }
     }
 
-    /** Cores whose structure could include pos (inside their pattern's bounding box). */
+    /** Cores whose structure could include pos (inside their pattern's bounding box, or within their watch). */
     public static List<BlockPos> matricesNear(Level level, BlockPos pos) {
         Map<BlockPos, Identifier> cores = CORES.get(level.dimension());
         if (cores == null || cores.isEmpty()) return List.of();
         Long2ObjectMap<List<BlockPos>> chunks = BY_CHUNK.get(level.dimension());
         if (chunks == null) return List.of();
+        Map<BlockPos, Integer> watching = WATCH.get(level.dimension());
+        if (watching != null && watching.isEmpty()) watching = null;
         int reach = MultiblockPatterns.maxReachChunks();
+        if (watching != null) reach = Math.max(reach, (widestWatch + 15) >> 4);
         int cx = pos.getX() >> 4, cz = pos.getZ() >> 4;
         List<BlockPos> found = null;
         for (int x = cx - reach; x <= cx + reach; x++) {
@@ -70,7 +89,7 @@ public final class CoreTracker {
                 if (inChunk == null) continue;
                 for (BlockPos core : inChunk) {
                     MultiblockPattern pattern = MultiblockPatterns.get(cores.get(core));
-                    if (pattern != null && pattern.isWithinStructure(core, pos)) {
+                    if ((pattern != null && pattern.isWithinStructure(core, pos)) || watches(watching, core, pos)) {
                         if (found == null) found = new ArrayList<>(2);
                         found.add(core);
                     }
@@ -78,6 +97,13 @@ public final class CoreTracker {
             }
         }
         return found == null ? List.of() : found;
+    }
+
+    private static boolean watches(@Nullable Map<BlockPos, Integer> watching, BlockPos core, BlockPos pos) {
+        if (watching == null) return false;
+        Integer reach = watching.get(core);
+        return reach != null && Math.abs(pos.getX() - core.getX()) <= reach && Math.abs(pos.getZ() - core.getZ()) <= reach
+                && Math.abs(pos.getY() - core.getY()) <= 1;
     }
 
     /** The formed machine whose structure contains pos (not counting the core itself), or null. */
@@ -95,5 +121,7 @@ public final class CoreTracker {
     public static void clear() {
         CORES.clear();
         BY_CHUNK.clear();
+        WATCH.clear();
+        widestWatch = 0;
     }
 }

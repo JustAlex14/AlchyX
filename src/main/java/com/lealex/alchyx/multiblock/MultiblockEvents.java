@@ -29,7 +29,7 @@ public final class MultiblockEvents {
         if (!(event.getLevel() instanceof ServerLevel level)) return;
         for (BlockPos matrixPos : CoreTracker.matricesNear(level, event.getPos())) {
             if (level.getBlockEntity(matrixPos) instanceof MultiblockCoreBlockEntity core) {
-                core.requestStructureCheck();
+                core.requestStructureCheck(event.getPos());
             }
         }
     }

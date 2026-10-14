@@ -40,6 +40,17 @@ public class UpgradeStorage {
             protected void onContentsChanged(int index, ItemStack previousContents) {
                 onChanged.run();
             }
+
+            // A machine saved when it took fewer (or more) kinds of upgrade comes back with that many slots: the
+            // list is brought to today's size, keeping what was in the slots that are still there
+            @Override
+            public void deserialize(ValueInput input) {
+                super.deserialize(input);
+                if (stacks.size() == types.size()) return;
+                net.minecraft.core.NonNullList<ItemStack> fitted = net.minecraft.core.NonNullList.withSize(types.size(), ItemStack.EMPTY);
+                for (int slot = 0; slot < Math.min(stacks.size(), fitted.size()); slot++) fitted.set(slot, stacks.get(slot));
+                setStacks(fitted);
+            }
         };
     }
 
@@ -54,7 +65,7 @@ public class UpgradeStorage {
     /** The installed upgrade of this type (empty if none, or if the machine doesn't take it). */
     public ItemStack stack(UpgradeType type) {
         int slot = types.indexOf(type);
-        if (slot < 0) return ItemStack.EMPTY;
+        if (slot < 0 || slot >= handler.size()) return ItemStack.EMPTY;
         ItemResource resource = handler.getResource(slot);
         return resource.isEmpty() ? ItemStack.EMPTY : resource.toStack(1);
     }

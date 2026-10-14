@@ -259,6 +259,24 @@ public abstract class MultiblockCoreBlockEntity extends BlockEntity {
         return formed && announced;
     }
 
+    /**
+     * For a machine whose real structure is not in its pattern but found by itself around its core (see
+     * com.lealex.alchyx.multiblock.Enclosure): how far from the core, along x and z, a block change must also ask it
+     * for a structure check ({@link #requestStructureCheck()}, which such a machine overrides to search again).
+     * 0 = only the pattern's own box. Read once, when the core loads.
+     */
+    protected int watchReach() {
+        return 0;
+    }
+
+    /**
+     * True for a machine that announces itself its own way: the "forming", "formed!" and "broken" messages and the
+     * forming and breaking sounds of this class are left out (e.g. a machine whose pattern is its core alone).
+     */
+    protected boolean quiet() {
+        return false;
+    }
+
     /** Called once the machine is formed and done settling (server). */
     protected void onFormationSettled() {}
 
@@ -381,6 +399,15 @@ public abstract class MultiblockCoreBlockEntity extends BlockEntity {
         checkRequested = true;
     }
 
+    /**
+     * The same, told which block changed. A machine whose structure is searched for (see {@link #watchReach()}) can
+     * override this to leave out changes that cannot matter to it (its own work inside its ground), and so not
+     * search again after each of them. By default every change asks for a check.
+     */
+    public void requestStructureCheck(BlockPos changed) {
+        requestStructureCheck();
+    }
+
     // ---- Client sync ----
 
     /** Asks to send this block entity's data to nearby players, once at the end of the current server tick. */
@@ -407,6 +434,7 @@ public abstract class MultiblockCoreBlockEntity extends BlockEntity {
         super.onLoad();
         if (level != null && !level.isClientSide()) {
             CoreTracker.add(level, worldPosition, patternId());
+            CoreTracker.watch(level, worldPosition, watchReach());
             checkRequested = true;
         } else if (level != null) {
             LoadedCores.add(this); // the client-side animation engine plays this core's animation file
@@ -482,14 +510,16 @@ public abstract class MultiblockCoreBlockEntity extends BlockEntity {
                 if (wasFormed) invalidateStructureCapabilities();
                 protectedPositions = List.of();
                 onStructureChanged(false);
-                playSound(worldPosition, SoundEvents.BEACON_DEACTIVATE, 1.0f, 1.0f);
-                notifyNearbyPlayers(machineName() + " broken: " + structureProblem);
+                if (!quiet()) {
+                    playSound(worldPosition, SoundEvents.BEACON_DEACTIVATE, 1.0f, 1.0f);
+                    notifyNearbyPlayers(machineName() + " broken: " + structureProblem);
+                }
             }
         } else if (!formed && !forming) {
             forming = true;
             setChanged();
             syncToClients(); // clients play their forming effects from isForming()
-            notifyNearbyPlayers(machineName() + " forming...");
+            if (!quiet()) notifyNearbyPlayers(machineName() + " forming...");
         } else if (formed && hasUnconvertedBlocks(pattern)) {
             // e.g. a /reload added blocks that convert, or a structure formed before the wave existed
             formed = false;
@@ -532,7 +562,7 @@ public abstract class MultiblockCoreBlockEntity extends BlockEntity {
                     serverLevel.sendParticles(waveParticle(),
                             pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5, 12, 0.3, 0.3, 0.3, 0.05);
                 }
-                playSound(pos, SoundEvents.AMETHYST_BLOCK_CHIME, 0.6f, 0.8f + level.getRandom().nextFloat() * 0.4f);
+                if (!quiet()) playSound(pos, SoundEvents.AMETHYST_BLOCK_CHIME, 0.6f, 0.8f + level.getRandom().nextFloat() * 0.4f);
                 return; // one block per tick
             }
         }
@@ -557,6 +587,7 @@ public abstract class MultiblockCoreBlockEntity extends BlockEntity {
         setChanged();
         syncToClients();
         onFormationSettled();
+        if (quiet()) return;
         playSound(worldPosition, SoundEvents.BEACON_ACTIVATE, 1.0f, 1.0f);
         if (!veilsWave()) { // an ordinary machine is done: a resonant chord (veiled ones end with their own animation)
             playSound(worldPosition, SoundEvents.END_PORTAL_FRAME_FILL, 1.0f, 0.8f);

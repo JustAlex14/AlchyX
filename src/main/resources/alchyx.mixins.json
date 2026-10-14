@@ -1,0 +1,12 @@
+{
+  "required": false,
+  "minVersion": "0.8",
+  "package": "com.lealex.alchyx.mixin",
+  "compatibilityLevel": "JAVA_21",
+  "mixins": [
+    "FurnaceRiftMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 0
+  }
+}

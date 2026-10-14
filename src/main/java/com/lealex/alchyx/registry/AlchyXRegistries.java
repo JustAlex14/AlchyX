@@ -68,6 +68,14 @@ public final class AlchyXRegistries {
 
     public static final DeferredRegister<MenuType<?>> MENU_TYPES = DeferredRegister.create(Registries.MENU, AlchyX.MODID);
 
+    public static final DeferredRegister<net.neoforged.neoforge.common.crafting.IngredientType<?>> INGREDIENT_TYPES =
+            DeferredRegister.create(net.neoforged.neoforge.registries.NeoForgeRegistries.Keys.INGREDIENT_TYPES, AlchyX.MODID);
+    /** "alchyx:rifted": a recipe ingredient taking anything a rift enhanced to a level or more (rift/RiftedIngredient). */
+    public static final DeferredHolder<net.neoforged.neoforge.common.crafting.IngredientType<?>,
+            net.neoforged.neoforge.common.crafting.IngredientType<com.lealex.alchyx.rift.RiftedIngredient>> RIFTED_INGREDIENT =
+            INGREDIENT_TYPES.register("rifted", () -> new net.neoforged.neoforge.common.crafting.IngredientType<>(
+                    com.lealex.alchyx.rift.RiftedIngredient.CODEC));
+
     /** The generic GUI of script-defined machines (the client reads the block position to find the core). */
     public static final DeferredHolder<MenuType<?>, MenuType<MachineMenu>> MACHINE_MENU =
             MENU_TYPES.register("machine", () -> IMenuTypeExtension.create(MachineMenu::new));
@@ -94,6 +102,7 @@ public final class AlchyXRegistries {
         BLOCKS.register(modEventBus);
         ITEMS.register(modEventBus);
         BLOCK_ENTITY_TYPES.register(modEventBus);
+        INGREDIENT_TYPES.register(modEventBus);
         MENU_TYPES.register(modEventBus);
         CREATIVE_MODE_TABS.register(modEventBus);
         modEventBus.addListener(AlchyXRegistries::addScriptedCores);

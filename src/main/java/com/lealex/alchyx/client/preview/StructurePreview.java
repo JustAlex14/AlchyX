@@ -88,7 +88,7 @@ public final class StructurePreview {
         BlockPos pos = menu.getCorePos();
         Minecraft minecraft = Minecraft.getInstance();
         if (pos == null || minecraft.level == null || !(minecraft.level.getBlockEntity(pos) instanceof MultiblockCoreBlockEntity core)) return;
-        if (core.isFormed()) return;
+        if (core.previewPatternId() == null) return;
         if (!HIDDEN.contains(pos)) SHOWN.add(pos.immutable()); // opening an unformed machine shows its structure
 
         int width = 90, height = 16;
@@ -114,7 +114,7 @@ public final class StructurePreview {
         if (event.getItemStack().getItem() instanceof MachineTool || event.getItemStack().getItem() instanceof BlockItem) return;
         BlockPos pos = event.getPos();
         if (!(event.getLevel().getBlockEntity(pos) instanceof MultiblockCoreBlockEntity core)) return;
-        if (core.isFormed() || core instanceof MenuProvider) return;
+        if (core.previewPatternId() == null || core instanceof MenuProvider) return;
         if (event.getEntity().isShiftKeyDown()) {
             if (isShown(pos)) toggle(pos);
         } else if (!isShown(pos)) {
@@ -137,7 +137,7 @@ public final class StructurePreview {
         }
         if (level == null || SHOWN.isEmpty() || level.getGameTime() % REFRESH_TICKS != 0) return;
         for (BlockPos core : new ArrayList<>(SHOWN)) {
-            if (!(level.getBlockEntity(core) instanceof MultiblockCoreBlockEntity entity) || entity.isFormed()) {
+            if (!(level.getBlockEntity(core) instanceof MultiblockCoreBlockEntity entity) || entity.previewPatternId() == null) {
                 SHOWN.remove(core); // formed (or gone): the preview's job is done
                 MISSING.remove(core);
                 WRONG_BLOCKS.remove(core);
@@ -153,7 +153,8 @@ public final class StructurePreview {
     }
 
     private static void refresh(ClientLevel level, BlockPos core, MultiblockCoreBlockEntity entity) {
-        MultiblockPattern pattern = MultiblockPatterns.client().get(entity.patternId());
+        net.minecraft.resources.Identifier id = entity.previewPatternId();
+        MultiblockPattern pattern = id == null ? null : MultiblockPatterns.client().get(id);
         if (pattern == null) return;
         Rotation rotation = pattern.rotationFor(entity.getBlockState());
         List<Ghost> missing = new ArrayList<>();
@@ -162,6 +163,7 @@ public final class StructurePreview {
             if (cell.offset().equals(BlockPos.ZERO)) continue; // the core itself
             BlockPos pos = core.offset(cell.offset().rotate(rotation));
             BlockState world = level.getBlockState(pos);
+            if (com.lealex.alchyx.multiblock.ShellParts.isPart(world)) continue; // already a part (a tier that grows)
             // A turned pattern: compare the block turned back to the written orientation, like the structure check
             BlockState asWritten = rotation == Rotation.NONE ? world : world.rotate(MultiblockPattern.inverse(rotation));
             if (cell.accepts().test(asWritten)) continue;

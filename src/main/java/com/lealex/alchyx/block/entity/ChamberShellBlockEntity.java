@@ -40,7 +40,7 @@ public class ChamberShellBlockEntity extends BlockEntity {
 
     private boolean hidden = false; // a "hidden" result: keeps its shape, draws nothing
     private long convertedAt = Long.MIN_VALUE / 2; // game time the wave turned this block into a shell
-    private boolean materialized = false;          // client: its materializing effect already played
+    private long materializedAt = Long.MIN_VALUE;  // client: the conversion whose materializing effect already played
     private long veiledBy = 0L;                    // core (BlockPos.asLong) that reveals this block itself, 0 = none
     private boolean clientHidden = false;          // client: veiled, drawn by its core's animation instead
     private boolean restore = false; // a "restore" result: the original block comes back when the machine breaks
@@ -250,11 +250,15 @@ public class ChamberShellBlockEntity extends BlockEntity {
         tint = input.getIntOr("tint", 0);
         convertedAt = input.getLongOr("convertedAt", Long.MIN_VALUE / 2);
         veiledBy = input.getLongOr("veiledBy", 0L);
-        if (level != null && level.isClientSide() && !materialized && level.getGameTime() - convertedAt <= 3) {
-            materialized = true; // only a fresh conversion, once (not when the chunk loads later)
+        if (level != null && level.isClientSide() && materializedAt != convertedAt && level.getGameTime() - convertedAt <= 3) {
+            // a fresh conversion, once each (not when the chunk loads later); a shell converted again while it stands
+            // (another look, the block entity kept) plays it again
+            materializedAt = convertedAt;
             if (veiledBy != 0L && !hidden) { // it phases out; its core's animation brings it back later
                 clientHidden = true;
-                com.lealex.alchyx.client.WaveEffects.phaseOut(level, worldPosition);
+                if (!(level.getBlockEntity(BlockPos.of(veiledBy)) instanceof MultiblockCoreBlockEntity core) || core.veilPuffs()) {
+                    com.lealex.alchyx.client.WaveEffects.phaseOut(level, worldPosition);
+                }
             }
         }
         if (level != null && level.isClientSide()) {

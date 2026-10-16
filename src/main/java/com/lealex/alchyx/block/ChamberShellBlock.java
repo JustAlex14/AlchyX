@@ -71,8 +71,18 @@ public class ChamberShellBlock extends Block implements EntityBlock {
 
     /** Same, veiled by the core at {@code veiledBy} (BlockPos.asLong, 0 = not veiled): see ChamberShellBlockEntity#markVeiled. */
     public static void place(Level level, BlockPos pos, BlockState disguise, boolean hidden, boolean restore, long veiledBy) {
+        place(level, pos, disguise, hidden, restore, veiledBy, false);
+    }
+
+    /**
+     * Same; {@code seeThrough}: the shell starts not opaque even if its disguise is, so the blocks around it keep
+     * drawing their faces against it while it is hidden on the clients (a veiled shell that its core shows later:
+     * otherwise its neighbours show holes into the void until then). Call {@link #settle} once it is shown.
+     */
+    public static void place(Level level, BlockPos pos, BlockState disguise, boolean hidden, boolean restore, long veiledBy,
+                             boolean seeThrough) {
         BlockState shell = AlchyXRegistries.CHAMBER_SHELL.get().defaultBlockState()
-                .setValue(OPAQUE, !hidden && disguise.isSolidRender())
+                .setValue(OPAQUE, !hidden && !seeThrough && disguise.isSolidRender())
                 .setValue(LIGHT, Math.clamp(disguise.getLightEmission(level, pos), 0, 15))
                 .setValue(SMOKING, !hidden && smokes(disguise));
         // UPDATE_KNOWN_SHAPE: don't make the neighbors recompute their shape. Otherwise a corner stair next to a
@@ -85,6 +95,15 @@ public class ChamberShellBlock extends Block implements EntityBlock {
             entity.setHidden(hidden);
             entity.setRestore(restore);
             entity.setDisguise(disguise);
+        }
+    }
+
+    /** A shell placed see-through becomes opaque again if its look is (the neighbours hide their faces against it). */
+    public static void settle(Level level, BlockPos pos) {
+        BlockState state = level.getBlockState(pos);
+        if (!(state.getBlock() instanceof ChamberShellBlock) || state.getValue(OPAQUE)) return;
+        if (level.getBlockEntity(pos) instanceof ChamberShellBlockEntity entity && !entity.isHidden() && entity.getDisguise().isSolidRender()) {
+            level.setBlock(pos, state.setValue(OPAQUE, true), Block.UPDATE_CLIENTS | Block.UPDATE_KNOWN_SHAPE);
         }
     }
 

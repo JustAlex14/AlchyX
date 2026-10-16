@@ -247,6 +247,14 @@ public abstract class MultiblockCoreBlockEntity extends BlockEntity {
     }
 
     /**
+     * For a machine whose waves are veiled ({@link #veilsWave()}, or shells it places veiled itself): true if each
+     * block puffs a few motes on the clients as it hides (client/WaveEffects.phaseOut). Default true.
+     */
+    public boolean veilPuffs() {
+        return true;
+    }
+
+    /**
      * Ticks a formed machine spends settling (playing its own formation animation) before it counts as done: the
      * "formed!" message and sounds come then, and it starts working only then. 0 = right away.
      */
@@ -274,6 +282,25 @@ public abstract class MultiblockCoreBlockEntity extends BlockEntity {
      * forming and breaking sounds of this class are left out (e.g. a machine whose pattern is its core alone).
      */
     protected boolean quiet() {
+        return false;
+    }
+
+    /**
+     * The pattern the client's structure preview shows around this core (ghost blocks for what is missing, red dust on
+     * what is in the way), or null for no preview. Default: the machine's pattern while it is not formed. A machine
+     * that grows tiers can name its next tier while formed, to show where the next blocks will go (parts it already
+     * has count as done).
+     */
+    public @Nullable Identifier previewPatternId() {
+        return isFormed() ? null : patternId();
+    }
+
+    /**
+     * True while the machine reshapes its own structure (a machine that grows or clears its parts, like
+     * AlchyForbidden's altar between two tiers): the structure checks wait, so a part it removes on purpose does not
+     * break it. Checks resume (and catch up) as soon as this is false again. Default false.
+     */
+    protected boolean holdsStructure() {
         return false;
     }
 
@@ -490,7 +517,7 @@ public abstract class MultiblockCoreBlockEntity extends BlockEntity {
     }
 
     private void updateStructure() {
-        if (level == null) return;
+        if (level == null || holdsStructure()) return;
         MultiblockPattern pattern = pattern();
         if (pattern == null) {
             // Broken or missing JSON: don't break an existing machine (and eat its blocks) over a typo

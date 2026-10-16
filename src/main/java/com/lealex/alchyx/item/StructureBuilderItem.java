@@ -33,8 +33,9 @@ import java.util.Map;
 
 /**
  * Right-click a machine's core block to build the whole structure from its pattern JSON around it, exactly as a
- * player would (before the transformation wave). Works for every machine: it looks up the pattern whose "core" is
- * the clicked block.
+ * player would (before the transformation wave). Works for every machine: it builds the pattern the core's block
+ * entity names (a machine with tiers names the tier it stands at), or else the pattern whose "core" is the clicked
+ * block.
  * <ul>
  *   <li>Creative: places everything for free.</li>
  *   <li>Survival: takes the blocks from the inventory (for a tag, whichever block of it the player carries; fluids
@@ -57,7 +58,10 @@ public class StructureBuilderItem extends Item implements MachineTool {
         if (level.isClientSide()) return InteractionResult.SUCCESS; // the server decides; just swing the arm
         if (player == null) return InteractionResult.FAIL;
 
-        MultiblockPattern pattern = MultiblockPatterns.forCore(level.getBlockState(core).getBlock());
+        // The core's own pattern first: several patterns can share a core block (AlchyForbidden's altar, one per tier)
+        MultiblockPattern pattern = level.getBlockEntity(core) instanceof com.lealex.alchyx.block.entity.MultiblockCoreBlockEntity entity
+                ? MultiblockPatterns.get(entity.patternId()) : null;
+        if (pattern == null) pattern = MultiblockPatterns.forCore(level.getBlockState(core).getBlock());
         if (pattern == null) {
             tell(player, Component.literal("Not a machine core: right-click the core block of a machine"));
             return InteractionResult.FAIL;

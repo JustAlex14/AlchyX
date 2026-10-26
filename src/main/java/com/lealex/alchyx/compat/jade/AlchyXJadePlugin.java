@@ -62,8 +62,9 @@ public class AlchyXJadePlugin implements IWailaPlugin {
         public static Component machineName(Identifier pattern) {
             String[] words = pattern.getPath().split("_");
             StringBuilder fallback = new StringBuilder();
-            for (String word : words) {
-                if (word.isEmpty()) continue;
+            for (int i = 0; i < words.length; i++) {
+                String word = words[i];
+                if (word.isEmpty() || (i == words.length - 1 && i > 0 && word.chars().allMatch(Character::isDigit))) continue; // a tier number is not part of the name
                 if (!fallback.isEmpty()) fallback.append(' ');
                 fallback.append(Character.toUpperCase(word.charAt(0))).append(word.substring(1));
             }

@@ -1,9 +1,14 @@
 {
+  "tooltip.alchyx.kept_upgrades": "Keeps its %s upgrade(s): set it down again to get them back",
   "block.alchyx.chamber_shell": "Machine Shell",
   "item.alchyx.structure_builder": "Structure Builder",
   "itemGroup.alchyx": "AlchyX",
   "item.alchyx.manual": "Machine Manual",
   "info.alchyx.manual.landing": "A field guide to the multiblock machines of this world: how to build them, and the structure of each one.",
   "tooltip.alchyx.upgrade": "Goes in a machine's upgrade tab",
-  "config.jade.plugin_alchyx.machine_name": "Machine names on formed parts"
+  "config.jade.plugin_alchyx.machine_name": "Machine names on formed parts",
+  "growth.alchyx.blocked": "%s at %s %s %s is in the way of the next tier.",
+  "growth.alchyx.gathers": "The machine gathers itself to grow.",
+  "growth.alchyx.grown": "The machine stands at tier %s.",
+  "growth.alchyx.wants": "Tier %s. It wants %s"
 }

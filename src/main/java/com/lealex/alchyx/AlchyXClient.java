@@ -20,6 +20,32 @@ import net.neoforged.neoforge.client.extensions.common.RegisterClientExtensionsE
 public class AlchyXClient {
 
     public AlchyXClient() {
+        // Scenes: scripted walks, the screen fade, whole-body poses (client/scene)
+        net.neoforged.neoforge.common.NeoForge.EVENT_BUS.addListener(com.lealex.alchyx.client.scene.SceneWalk::onPlayerTick);
+        net.neoforged.neoforge.common.NeoForge.EVENT_BUS.addListener(com.lealex.alchyx.client.scene.SceneWalk::onPlayerTickPost);
+        net.neoforged.neoforge.common.NeoForge.EVENT_BUS.addListener(com.lealex.alchyx.client.scene.SceneWalk::onRenderFrame);
+        net.neoforged.neoforge.common.NeoForge.EVENT_BUS.addListener(com.lealex.alchyx.client.scene.ScreenFade::onClientTick);
+        net.neoforged.neoforge.common.NeoForge.EVENT_BUS.addListener(com.lealex.alchyx.client.scene.CameraShots::onClientTick);
+        net.neoforged.neoforge.common.NeoForge.EVENT_BUS.addListener(com.lealex.alchyx.client.scene.CameraShots::onCameraDistance);
+        net.neoforged.neoforge.common.NeoForge.EVENT_BUS.addListener(com.lealex.alchyx.client.scene.CameraShots::onRenderLayer);
+        net.neoforged.neoforge.common.NeoForge.EVENT_BUS.addListener(net.neoforged.bus.api.EventPriority.LOWEST, com.lealex.alchyx.client.scene.BodyPoses::onRenderPre);
+        net.neoforged.neoforge.common.NeoForge.EVENT_BUS.addListener(net.neoforged.bus.api.EventPriority.LOWEST, com.lealex.alchyx.client.scene.BodyPoses::onRenderPost);
+        com.lealex.alchyx.client.scene.BodyPoses.init();
+        com.lealex.alchyx.scene.WalkScenes.clientStart = com.lealex.alchyx.client.scene.SceneWalk::start;
+        // Growing machines' parts flying in, sinking away, rising out of the ground (client/growth/GrowthParts)
+        com.lealex.alchyx.growth.GrowthPayload.clientReceive = com.lealex.alchyx.client.growth.GrowthParts::receive;
+        net.neoforged.neoforge.common.NeoForge.EVENT_BUS.addListener(com.lealex.alchyx.client.growth.GrowthParts::onClientTick);
+        net.neoforged.neoforge.common.NeoForge.EVENT_BUS.addListener(com.lealex.alchyx.client.growth.GrowthParts::onExtract);
+        net.neoforged.neoforge.common.NeoForge.EVENT_BUS.addListener(com.lealex.alchyx.client.growth.GrowthParts::onSubmit);
+        net.neoforged.neoforge.common.NeoForge.EVENT_BUS.addListener((net.neoforged.neoforge.event.entity.player.ItemTooltipEvent event) -> {
+            net.minecraft.world.item.component.CustomData kept = event.getItemStack().get(com.lealex.alchyx.registry.AlchyXRegistries.KEPT_CORE.get());
+            if (kept == null) return;
+            int upgrades = kept.copyTag().getIntOr("alchyx_upgrade_count", 0);
+            if (upgrades > 0) {
+                event.getToolTip().add(Math.min(1, event.getToolTip().size()), net.minecraft.network.chat.Component.translatable(
+                        "tooltip.alchyx.kept_upgrades", upgrades).withStyle(net.minecraft.ChatFormatting.DARK_PURPLE));
+            }
+        });
         // Patchouli entries opened -> "read:<entry>" advancement criteria on the server (compat/patchouli/BookReading)
         if (net.neoforged.fml.ModList.get().isLoaded("patchouli")) {
             net.neoforged.neoforge.common.NeoForge.EVENT_BUS.addListener(
@@ -48,6 +74,31 @@ public class AlchyXClient {
     @SubscribeEvent
     static void registerScreens(RegisterMenuScreensEvent event) {
         event.register(AlchyXRegistries.MACHINE_MENU.get(), MachineScreen::new);
+    }
+
+    // Scenes: the fade over the screen, pictures over players' skins, the pose and overlay data on players' render states
+    @SubscribeEvent
+    static void registerGuiLayers(net.neoforged.neoforge.client.event.RegisterGuiLayersEvent event) {
+        com.lealex.alchyx.client.scene.ScreenFade.onRegisterLayers(event);
+        com.lealex.alchyx.client.LookMeters.onRegisterLayers(event); // what a looked-at machine holds
+    }
+
+    @SubscribeEvent
+    static void addLayers(EntityRenderersEvent.AddLayers event) {
+        com.lealex.alchyx.client.scene.BodyOverlays.onAddLayers(event);
+    }
+
+    @SubscribeEvent
+    static void registerRenderStateModifiers(net.neoforged.neoforge.client.renderstate.RegisterRenderStateModifiersEvent event) {
+        event.registerAvatarEntityModifier(new net.neoforged.neoforge.client.renderstate.AvatarRenderStateModifier() {
+            @Override
+            public <T extends net.minecraft.world.entity.Avatar & net.minecraft.client.entity.ClientAvatarEntity> void accept(T entity,
+                    net.minecraft.client.renderer.entity.state.AvatarRenderState state) {
+                if (!(entity instanceof net.minecraft.world.entity.player.Player player)) return;
+                com.lealex.alchyx.client.scene.BodyPoses.apply(player, state);
+                com.lealex.alchyx.client.scene.BodyOverlays.apply(player, state);
+            }
+        });
     }
 
     // Shell animations (piston strikes)

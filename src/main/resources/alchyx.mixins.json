@@ -6,6 +6,9 @@
   "mixins": [
     "FurnaceRiftMixin"
   ],
+  "client": [
+    "HumanoidPoseMixin"
+  ],
   "injectors": {
     "defaultRequire": 0
   }

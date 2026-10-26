@@ -68,6 +68,16 @@ public final class AlchyXRegistries {
 
     public static final DeferredRegister<MenuType<?>> MENU_TYPES = DeferredRegister.create(Registries.MENU, AlchyX.MODID);
 
+    public static final DeferredRegister.DataComponents DATA_COMPONENTS = DeferredRegister.createDataComponents(Registries.DATA_COMPONENT_TYPE, AlchyX.MODID);
+    /**
+     * What a machine core's item keeps when the core is broken (MultiblockCoreBlockEntity.keptState: its upgrades,
+     * and whatever the machine adds), given back when it is set down again.
+     */
+    public static final DeferredHolder<net.minecraft.core.component.DataComponentType<?>, net.minecraft.core.component.DataComponentType<net.minecraft.world.item.component.CustomData>> KEPT_CORE =
+            DATA_COMPONENTS.registerComponentType("kept_core", builder -> builder
+                    .persistent(net.minecraft.world.item.component.CustomData.CODEC)
+                    .networkSynchronized(net.minecraft.world.item.component.CustomData.STREAM_CODEC));
+
     public static final DeferredRegister<net.neoforged.neoforge.common.crafting.IngredientType<?>> INGREDIENT_TYPES =
             DeferredRegister.create(net.neoforged.neoforge.registries.NeoForgeRegistries.Keys.INGREDIENT_TYPES, AlchyX.MODID);
     /** "alchyx:rifted": a recipe ingredient taking anything a rift enhanced to a level or more (rift/RiftedIngredient). */
@@ -104,6 +114,7 @@ public final class AlchyXRegistries {
         BLOCK_ENTITY_TYPES.register(modEventBus);
         INGREDIENT_TYPES.register(modEventBus);
         MENU_TYPES.register(modEventBus);
+        DATA_COMPONENTS.register(modEventBus);
         CREATIVE_MODE_TABS.register(modEventBus);
         modEventBus.addListener(AlchyXRegistries::addScriptedCores);
     }

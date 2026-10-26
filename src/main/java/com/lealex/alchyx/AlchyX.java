@@ -31,7 +31,10 @@ public class AlchyX {
     public AlchyX(IEventBus modEventBus, net.neoforged.fml.ModContainer modContainer) {
         AlchyXRegistries.register(modEventBus);
         modContainer.registerConfig(net.neoforged.fml.config.ModConfig.Type.CLIENT, AlchyXClientConfig.SPEC);
+        modContainer.registerConfig(net.neoforged.fml.config.ModConfig.Type.COMMON, AlchyXConfig.SPEC);
         modEventBus.addListener(AlchyX::registerCapabilities);
+        // a broken core's item keeps its upgrades (and what its machine adds)
+        net.neoforged.neoforge.common.NeoForge.EVENT_BUS.addListener(com.lealex.alchyx.block.entity.MultiblockCoreBlockEntity::onBlockDrops);
     }
 
     public static Identifier id(String path) {

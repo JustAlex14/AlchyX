@@ -278,6 +278,39 @@ public abstract class MultiblockCoreBlockEntity extends BlockEntity {
     }
 
     /**
+     * Deaths near this machine (multiblock/DeathWatch): how far from the core, in blocks, a living death tells it
+     * ({@link #onDeathNearby}, {@link #takeDropsNearby}) while it is loaded and formed. 0 = none (the default). Read
+     * once, when the core loads.
+     */
+    public int deathReach() {
+        return 0;
+    }
+
+    /**
+     * One bar of what a machine holds, shown while a player looks at it (client/LookMeters): an amount of a cap in a
+     * colour (argb), with an optional short label after the number (null for none).
+     */
+    public record LookMeter(long amount, long cap, int argb, net.minecraft.network.chat.@org.jspecify.annotations.Nullable Component label) {}
+
+    /**
+     * The bars shown beside the crosshair while a player looks at this machine (its core or any part of it), read on the
+     * client from what is synced: add one per thing it holds (essences, energy, fluids, progress...). None by default:
+     * the panel only shows for machines that list some.
+     */
+    public void lookMeters(java.util.List<LookMeter> out) {}
+
+    /** A living thing died within {@link #deathReach()} of this formed machine (server side). */
+    public void onDeathNearby(net.minecraft.world.entity.LivingEntity dead, net.minecraft.world.damagesource.DamageSource source) {}
+
+    /**
+     * The drops of a living thing that died within {@link #deathReach()}: return true to keep them (stored, voided:
+     * edit the collection), which stops nearer-to-farther cores after this one from seeing them.
+     */
+    public boolean takeDropsNearby(net.minecraft.world.entity.LivingEntity dead, java.util.Collection<net.minecraft.world.entity.item.ItemEntity> drops) {
+        return false;
+    }
+
+    /**
      * True for a machine that announces itself its own way: the "forming", "formed!" and "broken" messages and the
      * forming and breaking sounds of this class are left out (e.g. a machine whose pattern is its core alone).
      */
@@ -462,6 +495,7 @@ public abstract class MultiblockCoreBlockEntity extends BlockEntity {
         if (level != null && !level.isClientSide()) {
             CoreTracker.add(level, worldPosition, patternId());
             CoreTracker.watch(level, worldPosition, watchReach());
+            if (deathReach() > 0) com.lealex.alchyx.multiblock.DeathWatch.add(this);
             checkRequested = true;
         } else if (level != null) {
             LoadedCores.add(this); // the client-side animation engine plays this core's animation file
@@ -475,7 +509,92 @@ public abstract class MultiblockCoreBlockEntity extends BlockEntity {
         if (level != null && !level.isClientSide() && (formed || forming)) {
             destroyParts();
         }
-        if (level != null && !level.isClientSide() && upgrades != null) upgrades.dropAll(level, pos); // upgrades drop with the core
+        if (level != null && !level.isClientSide() && upgrades != null) {
+            if (!keepsStateOnItem()) {
+                upgrades.dropAll(level, pos); // upgrades drop with the core
+            } else if (level instanceof ServerLevel server) {
+                // they go on the core's item (onBlockDrops); if no item drops (creative, a command, an explosion that
+                // ate it) they drop as items after all, once the drops are done
+                List<ItemStack> loose = new ArrayList<>(upgrades.handler().copyToList());
+                server.getServer().execute(() -> {
+                    if (keptClaimed) return;
+                    for (ItemStack stack : loose) {
+                        if (!stack.isEmpty()) net.minecraft.world.Containers.dropItemStack(server, pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5, stack);
+                    }
+                });
+            }
+        }
+    }
+
+    // ---- What the core's item keeps (upgrades, and the machine's own state) ----
+
+    /** Set once a dropped item took this core's kept state (so its upgrades are not dropped a second time). */
+    private boolean keptClaimed = false;
+
+    /**
+     * Whether this core's item keeps its state when the core is broken (default: when it takes upgrades): the
+     * upgrades go on the item instead of dropping, with what keepOnItem adds, and come back when it is set down.
+     */
+    protected boolean keepsStateOnItem() {
+        return upgrades != null;
+    }
+
+    /** What the item keeps besides the upgrades (default nothing). Keys starting with "alchyx_" are the library's. */
+    protected void keepOnItem(CompoundTag tag) {}
+
+    /** The item's kept state, given back as the core is set down (the upgrades are restored by the base class). */
+    protected void restoreFromItem(CompoundTag tag) {}
+
+    /** The state the core's item keeps right now (empty: nothing). */
+    public CompoundTag keptState() {
+        CompoundTag tag = new CompoundTag();
+        keepOnItem(tag);
+        if (upgrades != null && level != null) {
+            int installed = 0;
+            for (ItemStack stack : upgrades.handler().copyToList()) if (!stack.isEmpty()) installed++;
+            if (installed > 0) {
+                net.minecraft.world.level.storage.TagValueOutput out = net.minecraft.world.level.storage.TagValueOutput.createWithContext(
+                        net.minecraft.util.ProblemReporter.DISCARDING, level.registryAccess());
+                upgrades.save(out);
+                tag.put("alchyx_upgrades", out.buildResult());
+                tag.putInt("alchyx_upgrade_count", installed);
+            }
+        }
+        return tag;
+    }
+
+    @Override
+    protected void applyImplicitComponents(net.minecraft.core.component.DataComponentGetter components) {
+        super.applyImplicitComponents(components);
+        net.minecraft.world.item.component.CustomData kept = components.get(com.lealex.alchyx.registry.AlchyXRegistries.KEPT_CORE.get());
+        if (kept == null || level == null) return;
+        CompoundTag tag = kept.copyTag();
+        restoreFromItem(tag);
+        if (upgrades != null && tag.contains("alchyx_upgrades")) {
+            upgrades.load(net.minecraft.world.level.storage.TagValueInput.create(net.minecraft.util.ProblemReporter.DISCARDING,
+                    level.registryAccess(), tag.getCompoundOrEmpty("alchyx_upgrades")));
+            onUpgradesChanged();
+        }
+    }
+
+    /**
+     * A core breaking drops its item: the item takes the core's kept state (registered in AlchyX on NeoForge's bus).
+     * Any mod's machine gets this without loot table changes.
+     */
+    public static void onBlockDrops(net.neoforged.neoforge.event.level.BlockDropsEvent event) {
+        if (!(event.getBlockEntity() instanceof MultiblockCoreBlockEntity core) || !core.keepsStateOnItem()) return;
+        net.minecraft.world.item.Item item = event.getState().getBlock().asItem();
+        for (net.minecraft.world.entity.item.ItemEntity drop : event.getDrops()) {
+            if (!drop.getItem().is(item)) continue;
+            CompoundTag kept = core.keptState();
+            if (!kept.isEmpty()) {
+                ItemStack stack = drop.getItem().copy();
+                stack.set(com.lealex.alchyx.registry.AlchyXRegistries.KEPT_CORE.get(), net.minecraft.world.item.component.CustomData.of(kept));
+                drop.setItem(stack);
+            }
+            core.keptClaimed = true;
+            return;
+        }
     }
 
     @Override
@@ -483,6 +602,7 @@ public abstract class MultiblockCoreBlockEntity extends BlockEntity {
         super.setRemoved();
         if (level != null && !level.isClientSide()) {
             CoreTracker.remove(level, worldPosition);
+            com.lealex.alchyx.multiblock.DeathWatch.remove(this);
             if (formed) invalidateStructureCapabilities();
         } else {
             LoadedCores.remove(this);
@@ -684,13 +804,14 @@ public abstract class MultiblockCoreBlockEntity extends BlockEntity {
         }
     }
 
+    /** Tells nearby players something about this machine (action bar by default: AlchyXConfig messages.machine). */
     protected void notifyNearbyPlayers(String message) {
-        if (!(level instanceof ServerLevel serverLevel)) return;
-        Vec3 center = Vec3.atCenterOf(worldPosition);
-        for (ServerPlayer player : serverLevel.players()) {
-            if (player.distanceToSqr(center) <= MESSAGE_RANGE * MESSAGE_RANGE) {
-                player.sendSystemMessage(Component.literal(message));
-            }
+        notifyNearbyPlayers(Component.literal(message));
+    }
+
+    protected void notifyNearbyPlayers(Component message) {
+        if (level instanceof ServerLevel serverLevel) {
+            com.lealex.alchyx.AlchyXConfig.tellNearby(serverLevel, Vec3.atCenterOf(worldPosition), MESSAGE_RANGE, message);
         }
     }
 

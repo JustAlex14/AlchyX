@@ -386,6 +386,15 @@ public class ScriptedCoreBlockEntity extends MultiblockCoreBlockEntity implement
         return tank >= 0 && tank < spec.tanks() ? tanks.getAmountAsInt(tank) : 0;
     }
 
+    /** Its tanks and its energy beside the crosshair (client/LookMeters). */
+    @Override
+    public void lookMeters(java.util.List<LookMeter> out) {
+        for (int tank = 0; tank < spec.tanks(); tank++) {
+            out.add(new LookMeter(getFluidAmount(tank), spec.tankCapacity(), 0xFF3F76E4, net.minecraft.network.chat.Component.literal("mB")));
+        }
+        if (spec.energyCapacity() > 0) out.add(new LookMeter(getEnergy(), spec.energyCapacity(), 0xFFD8443A, net.minecraft.network.chat.Component.literal("FE")));
+    }
+
     public int getEnergy() {
         return (int) energy.getAmountAsLong();
     }

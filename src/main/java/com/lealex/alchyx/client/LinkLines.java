@@ -26,14 +26,15 @@ public final class LinkLines {
     }
 
     /**
-     * A line of motes from one point to another, one every half block (two at least, {@code most} at most). They
+     * A line of motes from one point to another, one every half block (two at least, {@code most} at most; fewer
+     * with AlchyX's particle amount turned down, the line still whole). They
      * drift along the line from call to call, so a link reads as a flow and not as a row of dots.
      *
      * @param every how many ticks apart the mod calls this (the drift's pace)
      */
     public static void line(ClientLevel level, Vec3 from, Vec3 to, ParticleOptions mote, int most, int every) {
         Vec3 along = to.subtract(from);
-        int motes = (int) Math.min(most, Math.max(2, along.length() / 0.5));
+        int motes = (int) Math.min(most, Math.max(2, along.length() / 0.5 * Math.max(0.25F, com.lealex.alchyx.AlchyXClientConfig.particleScale())));
         double shift = (level.getGameTime() / (double) Math.max(1, every) % 4) / 4.0;
         for (int i = 0; i < motes; i++) {
             double t = (i + shift) / motes;

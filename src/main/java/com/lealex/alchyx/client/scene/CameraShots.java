@@ -68,6 +68,13 @@ public final class CameraShots {
         return SHOTS.containsKey(id);
     }
 
+    /** Whether this shot is the one holding the camera (none newer on top of it). */
+    public static boolean topIs(Identifier id) {
+        Identifier last = null;
+        for (Identifier key : SHOTS.keySet()) last = key;
+        return id.equals(last);
+    }
+
     public static boolean any() {
         return !SHOTS.isEmpty();
     }

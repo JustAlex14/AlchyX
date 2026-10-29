@@ -31,6 +31,14 @@ public class AlchyXClient {
         net.neoforged.neoforge.common.NeoForge.EVENT_BUS.addListener(net.neoforged.bus.api.EventPriority.LOWEST, com.lealex.alchyx.client.scene.BodyPoses::onRenderPre);
         net.neoforged.neoforge.common.NeoForge.EVENT_BUS.addListener(net.neoforged.bus.api.EventPriority.LOWEST, com.lealex.alchyx.client.scene.BodyPoses::onRenderPost);
         com.lealex.alchyx.client.scene.BodyPoses.init();
+        // Mod trailers: a camera flown along a file's shots (/trailer play <id>; client/scene/TrailerPlayer)
+        net.neoforged.neoforge.common.NeoForge.EVENT_BUS.addListener(com.lealex.alchyx.client.scene.TrailerPlayer::onRenderFrame);
+        net.neoforged.neoforge.common.NeoForge.EVENT_BUS.addListener(com.lealex.alchyx.client.scene.TrailerPlayer::onClientTick);
+        net.neoforged.neoforge.common.NeoForge.EVENT_BUS.addListener(com.lealex.alchyx.client.scene.TrailerPlayer::onCameraAngles);
+        net.neoforged.neoforge.common.NeoForge.EVENT_BUS.addListener(com.lealex.alchyx.client.scene.TrailerPlayer::onFov);
+        net.neoforged.neoforge.common.NeoForge.EVENT_BUS.addListener(com.lealex.alchyx.client.scene.TrailerPlayer::onBlockOverlay);
+        net.neoforged.neoforge.common.NeoForge.EVENT_BUS.addListener(net.neoforged.bus.api.EventPriority.HIGHEST, com.lealex.alchyx.client.scene.TrailerPlayer::onRenderLiving);
+        net.neoforged.neoforge.common.NeoForge.EVENT_BUS.addListener(com.lealex.alchyx.client.scene.TrailerPlayer::onRegisterCommands);
         com.lealex.alchyx.scene.WalkScenes.clientStart = com.lealex.alchyx.client.scene.SceneWalk::start;
         // Growing machines' parts flying in, sinking away, rising out of the ground (client/growth/GrowthParts)
         com.lealex.alchyx.growth.GrowthPayload.clientReceive = com.lealex.alchyx.client.growth.GrowthParts::receive;
@@ -80,7 +88,13 @@ public class AlchyXClient {
     @SubscribeEvent
     static void registerGuiLayers(net.neoforged.neoforge.client.event.RegisterGuiLayersEvent event) {
         com.lealex.alchyx.client.scene.ScreenFade.onRegisterLayers(event);
+        com.lealex.alchyx.client.scene.TrailerPlayer.onRegisterLayers(event); // over the fade: titles show on black
         com.lealex.alchyx.client.LookMeters.onRegisterLayers(event); // what a looked-at machine holds
+    }
+
+    @SubscribeEvent
+    static void addReloadListeners(net.neoforged.neoforge.client.event.AddClientReloadListenersEvent event) {
+        com.lealex.alchyx.client.scene.Trailers.onAddReloadListeners(event); // assets/<ns>/trailers/*.json
     }
 
     @SubscribeEvent

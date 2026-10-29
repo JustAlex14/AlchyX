@@ -10,5 +10,8 @@
   "growth.alchyx.blocked": "%s at %s %s %s is in the way of the next tier.",
   "growth.alchyx.gathers": "The machine gathers itself to grow.",
   "growth.alchyx.grown": "The machine stands at tier %s.",
-  "growth.alchyx.wants": "Tier %s. It wants %s"
+  "growth.alchyx.wants": "Tier %s. It wants %s",
+  "commands.alchyx.trailer.playing": "Playing the trailer %s (%s s). /trailer stop ends it.",
+  "commands.alchyx.trailer.unknown": "No trailer called %s. /trailer list shows them.",
+  "commands.alchyx.trailer.list": "%s trailer(s): %s"
 }

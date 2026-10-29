@@ -44,6 +44,11 @@ public final class MultiblockPatterns extends SimpleJsonResourceReloadListener<M
         return patterns.get(id);
     }
 
+    /** Every loaded pattern's id (server side). */
+    public static java.util.Set<Identifier> ids() {
+        return patterns.keySet();
+    }
+
     /** The pattern whose core is this block, or null if the block isn't the core of any machine. */
     public static @Nullable MultiblockPattern forCore(Block block) {
         for (MultiblockPattern pattern : patterns.values()) {

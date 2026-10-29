@@ -176,7 +176,7 @@ public class StructureBuilderItem extends Item implements MachineTool {
     }
 
     /** Places the blocks: plain ones first, then stairs, then blocks needing support, then joins stair corners. */
-    private static int place(Level level, List<MultiblockPattern.Placement> plan) {
+    public static int place(Level level, List<MultiblockPattern.Placement> plan) {
         int placed = 0;
         // Blocks that need support (hanging lanterns and dripstone, candles...) wait until what holds them is there
         List<MultiblockPattern.Placement> needSupport = new ArrayList<>();

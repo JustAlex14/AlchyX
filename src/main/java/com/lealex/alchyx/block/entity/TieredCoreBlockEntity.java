@@ -384,6 +384,28 @@ public abstract class TieredCoreBlockEntity extends MultiblockCoreBlockEntity {
         return null;
     }
 
+    /** Set by /alchyx showcase build (not saved): the machine was raised for a trailer, so it grows quietly. */
+    protected boolean showcase;
+
+    /**
+     * For trailers and showcase maps: the machine has earned its top tier, so once its first tier forms the rift grows
+     * the rest. {@link #prepareShowcase} gives it what else it needs to grow (a key item...).
+     */
+    public void showcaseGrown() {
+        tier = maxTier();
+        showcase = true;
+        prepareShowcase();
+        setChanged();
+        if (isFormed()) tryGrowing();
+    }
+
+    /** What a showcased machine needs besides its tier (default nothing). */
+    protected void prepareShowcase() {}
+
+    public boolean showcase() {
+        return showcase;
+    }
+
     /** Tries the growth it is owed: back to its earned tier, or the next one once paid for. */
     protected void tryGrowing() {
         if (!isFormed() || isGrowing() || !canGrow()) return;

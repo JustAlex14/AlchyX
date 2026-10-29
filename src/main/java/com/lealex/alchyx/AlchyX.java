@@ -35,6 +35,10 @@ public class AlchyX {
         modEventBus.addListener(AlchyX::registerCapabilities);
         // a broken core's item keeps its upgrades (and what its machine adds)
         net.neoforged.neoforge.common.NeoForge.EVENT_BUS.addListener(com.lealex.alchyx.block.entity.MultiblockCoreBlockEntity::onBlockDrops);
+        // /alchyx showcase build: machines raised for trailers and showcase maps
+        net.neoforged.neoforge.common.NeoForge.EVENT_BUS.addListener(com.lealex.alchyx.command.ShowcaseCommand::register);
+        net.neoforged.neoforge.common.NeoForge.EVENT_BUS.addListener(com.lealex.alchyx.command.ShowcaseCommand::onServerTick);
+        net.neoforged.neoforge.common.NeoForge.EVENT_BUS.addListener(com.lealex.alchyx.command.ShowcaseCommand::onServerStopping);
     }
 
     public static Identifier id(String path) {

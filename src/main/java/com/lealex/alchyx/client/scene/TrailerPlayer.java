@@ -55,7 +55,15 @@ public final class TrailerPlayer {
     private static Vec3 origin = Vec3.ZERO;
     private static double time;
     private static int cuesRun;
+    /** The trailer's commands sorted by time (a file may list them in any order; same-time ones keep theirs). */
+    private static List<Trailer.Cue> cueOrder = List.of();
     private static long lastMillis;
+    /** The world's game time when the trailer started: the clock never runs ahead of the server's ticks. */
+    private static long startGameTime;
+    /** Real ticks the camera spent waiting for the world (told to the player at the end). */
+    private static double waited;
+    /** The trailer's own music while it plays (the game's music is kept quiet meanwhile). */
+    private static net.minecraft.client.resources.sounds.@Nullable SimpleSoundInstance music;
     private static float yaw, pitch, roll;
     private static float fov = Float.NaN;
     private static @Nullable LocalPlayer inputOwner;
@@ -78,7 +86,10 @@ public final class TrailerPlayer {
         origin = at;
         time = 0;
         cuesRun = 0;
+        cueOrder = found.commands().stream().sorted(java.util.Comparator.comparingInt(Trailer.Cue::at)).toList();
         lastMillis = Util.getMillis();
+        startGameTime = worldTicks(minecraft);
+        waited = 0;
         place(0);
         LocalPlayer player = minecraft.player;
         savedInput = player.input;
@@ -87,7 +98,14 @@ public final class TrailerPlayer {
         reanchor = 0;
         lost = 0;
         home = minecraft.level.dimension();
-        CameraShots.take(SHOT, CameraType.FIRST_PERSON, null);
+found.music().ifPresent(sound -> {
+            minecraft.getMusicManager().stopPlaying();
+            music = new net.minecraft.client.resources.sounds.SimpleSoundInstance(sound, net.minecraft.sounds.SoundSource.MUSIC,
+                    1F, 1F, net.minecraft.util.RandomSource.create(), false, 0,
+                    net.minecraft.client.resources.sounds.SoundInstance.Attenuation.NONE, 0, 0, 0, true);
+            minecraft.getSoundManager().play(music);
+        });
+                CameraShots.take(SHOT, CameraType.FIRST_PERSON, null);
         CameraShots.watch(SHOT, marker);
         return true;
     }
@@ -106,6 +124,10 @@ public final class TrailerPlayer {
         savedInput = null;
         inputOwner = null;
         CameraShots.release(SHOT);
+        if (music != null) {
+            Minecraft.getInstance().getSoundManager().stop(music);
+            music = null;
+        }
     }
 
     /** Moves the marker to where the trailer is at this time (ticks from its start). */
@@ -162,12 +184,39 @@ public final class TrailerPlayer {
         return 1F;
     }
 
+    /**
+     * How fast the clock may run (1 = real time). Builds, waves and machines run on the server's ticks: a server that
+     * falls behind 20 ticks a second (a busy world) would leave the camera ahead of them, filming a machine before it
+     * stands or works. So the clock eases off once it is more than a few ticks ahead of the world's game time (the
+     * client's copy, corrected by the server every second) and almost stops while far ahead. Behind is left alone.
+     */
+    private static double pace(Minecraft minecraft) {
+        if (minecraft.level == null) return 1;
+        double lead = time - (worldTicks(minecraft) - startGameTime);
+        if (lead <= 4) return 1;
+        return Math.max(0.1, 1 - (lead - 4) / 16);
+    }
+
+    /**
+     * Ticks the world has really run: in single player the integrated server's own count (exact, even when it falls
+     * far behind), else the client's game time (the server corrects it once a second).
+     */
+    private static long worldTicks(Minecraft minecraft) {
+        net.minecraft.client.server.IntegratedServer server = minecraft.getSingleplayerServer();
+        if (server != null) return server.getTickCount();
+        return minecraft.level == null ? 0 : minecraft.level.getGameTime();
+    }
+
     public static void onRenderFrame(RenderFrameEvent.Pre event) {
         if (trailer == null) return;
         Minecraft minecraft = Minecraft.getInstance();
         long now = Util.getMillis();
         // paused with the game, and while another cinematic (a boss's entrance a command started) holds the camera
-        if (!minecraft.isPaused() && CameraShots.topIs(SHOT)) time += Math.min(250, now - lastMillis) / 50.0;
+        if (!minecraft.isPaused() && CameraShots.topIs(SHOT)) {
+            double real = Math.min(250, now - lastMillis) / 50.0, step = real * pace(minecraft);
+            time += step;
+            waited += real - step;
+        }
         lastMillis = now;
         place(time);
     }
@@ -193,6 +242,7 @@ public final class TrailerPlayer {
             reanchor = 15;
         }
         if (!(minecraft.player.input instanceof StillInput)) minecraft.player.input = new StillInput();
+        if (music != null) minecraft.getMusicManager().stopPlaying(); // no game music over the trailer's own
         if (!CameraShots.active(SHOT)) CameraShots.take(SHOT, CameraType.FIRST_PERSON, null);
         if (minecraft.getCameraEntity() != camera && CameraShots.topIs(SHOT)) CameraShots.watch(SHOT, camera);
         if (reanchor > 0) {
@@ -201,13 +251,15 @@ public final class TrailerPlayer {
             // back where it began: the player stands on the map's standing spot again, not on its origin
             if (minecraft.level.dimension() == home) origin = origin.subtract(playing.stand());
         }
-        List<Trailer.Cue> cues = playing.commands();
+        List<Trailer.Cue> cues = cueOrder;
         while (cuesRun < cues.size() && cues.get(cuesRun).at() <= time) {
             String command = cues.get(cuesRun++).command().trim();
             if (command.startsWith("/")) command = command.substring(1);
             if (!command.isEmpty()) minecraft.player.connection.sendCommand(command);
         }
         if (time >= playing.length() && CameraShots.topIs(SHOT)) {
+            if (waited >= 20) minecraft.gui.getChat().addClientSystemMessage(net.minecraft.network.chat.Component.literal(
+                    "Trailer: the camera waited " + Math.round(waited / 20) + " s for the world (the server ran behind)"));
             stop();
             return;
         }
@@ -235,6 +287,11 @@ public final class TrailerPlayer {
 
     /** Never the inside of a block over the screen (the player may stand in one; the camera is elsewhere). */
     public static void onBlockOverlay(net.neoforged.neoforge.client.event.RenderBlockScreenEffectEvent event) {
+        if (trailer != null) event.setCanceled(true);
+    }
+
+    /** No hands or held item in the shot (a trailer may hand the player a tool for what it shows, like a tuner). */
+    public static void onRenderHand(net.neoforged.neoforge.client.event.RenderHandEvent event) {
         if (trailer != null) event.setCanceled(true);
     }
 

@@ -30,6 +30,9 @@ public class AlchyXJadePlugin implements IWailaPlugin {
     @Override
     public void registerClient(IWailaClientRegistration registration) {
         registration.registerBlockComponent(MachineNameProvider.INSTANCE, ChamberShellBlock.class);
+        // No Jade box over a cutscene or a trailer (the camera may look at blocks the player never aimed at)
+        registration.addRayTraceCallback((hit, accessor, original) ->
+                com.lealex.alchyx.client.scene.CameraShots.cutscene() ? null : accessor);
     }
 
     /**

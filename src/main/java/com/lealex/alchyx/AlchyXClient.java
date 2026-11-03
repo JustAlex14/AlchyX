@@ -37,6 +37,7 @@ public class AlchyXClient {
         net.neoforged.neoforge.common.NeoForge.EVENT_BUS.addListener(com.lealex.alchyx.client.scene.TrailerPlayer::onCameraAngles);
         net.neoforged.neoforge.common.NeoForge.EVENT_BUS.addListener(com.lealex.alchyx.client.scene.TrailerPlayer::onFov);
         net.neoforged.neoforge.common.NeoForge.EVENT_BUS.addListener(com.lealex.alchyx.client.scene.TrailerPlayer::onBlockOverlay);
+        net.neoforged.neoforge.common.NeoForge.EVENT_BUS.addListener(com.lealex.alchyx.client.scene.TrailerPlayer::onRenderHand);
         net.neoforged.neoforge.common.NeoForge.EVENT_BUS.addListener(net.neoforged.bus.api.EventPriority.HIGHEST, com.lealex.alchyx.client.scene.TrailerPlayer::onRenderLiving);
         net.neoforged.neoforge.common.NeoForge.EVENT_BUS.addListener(com.lealex.alchyx.client.scene.TrailerPlayer::onRegisterCommands);
         com.lealex.alchyx.scene.WalkScenes.clientStart = com.lealex.alchyx.client.scene.SceneWalk::start;

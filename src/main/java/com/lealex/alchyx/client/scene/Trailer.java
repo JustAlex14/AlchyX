@@ -34,22 +34,25 @@ import net.minecraft.world.phys.Vec3;
  *   ],                                       style title | subtitle | caption; text is a lang key or plain text
  *   "commands": [
  *     { "at": 0, "command": "alchyx showcase build mymod:machine ~3 ~ ~-8 south" }
- *   ]                                        run by the player at that tick (~ = from where they stand)
- * }
+ *   ],                                       run by the player at that tick (~ = from where they stand)
+ *   "music": "mymod:trailer"                 a sound event of the mod's sounds.json (optional): played from the
+ * }                                          start, everywhere at once, on the Music volume; stopped with the trailer
  * </pre>
  * A command that takes the player to another world (a void arena) is followed: the camera goes with them, and the
  * shots after it are measured from where they land (and again from where they come back to).
  * <pre>
  * </pre>
  */
-public record Trailer(boolean letterbox, Vec3 stand, List<Shot> shots, List<Text> texts, List<Cue> commands) {
+public record Trailer(boolean letterbox, Vec3 stand, List<Shot> shots, List<Text> texts, List<Cue> commands,
+                      java.util.Optional<net.minecraft.resources.Identifier> music) {
 
     public static final Codec<Trailer> CODEC = RecordCodecBuilder.create(i -> i.group(
             Codec.BOOL.optionalFieldOf("letterbox", true).forGetter(Trailer::letterbox),
             Vec3.CODEC.optionalFieldOf("stand", Vec3.ZERO).forGetter(Trailer::stand),
             Shot.CODEC.listOf(1, 256).fieldOf("shots").forGetter(Trailer::shots),
             Text.CODEC.listOf().optionalFieldOf("texts", List.of()).forGetter(Trailer::texts),
-            Cue.CODEC.listOf().optionalFieldOf("commands", List.of()).forGetter(Trailer::commands)
+            Cue.CODEC.listOf().optionalFieldOf("commands", List.of()).forGetter(Trailer::commands),
+            net.minecraft.resources.Identifier.CODEC.optionalFieldOf("music").forGetter(Trailer::music)
     ).apply(i, Trailer::new));
 
     /**

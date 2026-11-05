@@ -2,6 +2,7 @@
 
 - [Home](Home)
 - [For Players](For-Players)
+- [Modpack Guide](Modpack-Guide)
 
 **Making machines**
 

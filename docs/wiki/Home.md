@@ -15,6 +15,7 @@ If you want to add your own machine, pick the way that suits you:
 | Write a NeoForge mod with machines in Java | [Getting Started](Getting-Started), then [Your First Multiblock](Your-First-Multiblock) |
 | Add machines to a modpack without Java | [KubeJS Machines](KubeJS-Machines) |
 | Change or add structures with a datapack | [Pattern Format](Pattern-Format) |
+| Change recipes, tags and shapes of AlchyX mods in a modpack | [Modpack Guide](Modpack-Guide) |
 | Animate a machine | [Animations](Animations) |
 
 ## Developer pages

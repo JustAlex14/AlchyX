@@ -523,7 +523,7 @@ public abstract class MultiblockCoreBlockEntity extends BlockEntity {
             keptMarks.add(new com.lealex.alchyx.animation.StudioMark(at.immutable(), mark.kind(), mark.what(), Math.floorMod(mark.yaw(), 360),
                     mark.kind() == com.lealex.alchyx.animation.StudioMark.Kind.ITEM ? mark.to().map(BlockPos::immutable) : java.util.Optional.empty(),
                     mark.times().tidy(), mark.kind() == com.lealex.alchyx.animation.StudioMark.Kind.ITEM
-                            ? mark.items().stream().filter(net.minecraft.core.registries.BuiltInRegistries.ITEM::containsKey)
+                            ? mark.items().stream().filter(com.lealex.alchyx.animation.StudioMark::validEntry)
                                     .limit(com.lealex.alchyx.animation.StudioMark.MAX_ITEMS).toList()
                             : List.of()));
         }

@@ -463,7 +463,7 @@ public final class AnimationEngine {
                 if (when.continuous() ? !when.holds(working) : !working) continue;
                 if (!item.timing().levelsMet(core::getAnimationLevel)) continue; // "min_level"
                 if (!item.timing().within(working, core.getAnimationProgress(time))) continue; // "between"
-                ItemStack stack = item.shown(() -> core.getAnimationDisplay(item.display()), core.getAnimationProgress(time));
+                ItemStack stack = item.shown(core::getAnimationDisplay, core.getAnimationProgress(time));
                 if (stack.isEmpty()) continue;
                 ItemStackRenderState state = new ItemStackRenderState();
                 minecraft.getItemModelResolver().updateForTopItem(state, stack, ItemDisplayContext.GROUND, level, null,

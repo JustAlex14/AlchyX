@@ -32,7 +32,7 @@ import java.util.Optional;
  * {@code what} is the particle type, the entity type or the display. {@link Times}: when in the work it shows, and
  * when a traveling item leaves and arrives.
  */
-public record StudioMark(BlockPos offset, Kind kind, String what, int yaw, Optional<BlockPos> to, Times times, List<Identifier> items) {
+public record StudioMark(BlockPos offset, Kind kind, String what, int yaw, Optional<BlockPos> to, Times times, List<String> items) {
 
     /** The most items an item anchor goes through. */
     public static final int MAX_ITEMS = 16;
@@ -123,13 +123,20 @@ public record StudioMark(BlockPos offset, Kind kind, String what, int yaw, Optio
         return new StudioMark(offset, kind, what, yaw, to, times.tidy(), items);
     }
 
-    public StudioMark withItems(List<Identifier> items) {
+    public StudioMark withItems(List<String> items) {
         return new StudioMark(offset, kind, what, yaw, to, times, List.copyOf(items));
     }
 
     /** The same mark, its spots moved by this much. */
     public StudioMark shifted(BlockPos by) {
         return new StudioMark(offset.offset(by), kind, what, yaw, to.map(t -> t.offset(by)), times, items);
+    }
+
+    /** Whether an item anchor's entry is usable: a display's name ("input"), or an item that exists. */
+    public static boolean validEntry(String entry) {
+        if (!entry.contains(":")) return DISPLAYS.contains(entry);
+        Identifier id = Identifier.tryParse(entry);
+        return id != null && BuiltInRegistries.ITEM.containsKey(id);
     }
 
     /** The particle or entity type it names, if {@code what} is an id. */
@@ -144,7 +151,7 @@ public record StudioMark(BlockPos offset, Kind kind, String what, int yaw, Optio
             Codec.INT.optionalFieldOf("yaw", 0).forGetter(StudioMark::yaw),
             BlockPos.CODEC.optionalFieldOf("to").forGetter(StudioMark::to),
             Times.CODEC.optionalFieldOf("times", Times.ALWAYS).forGetter(StudioMark::times),
-            Identifier.CODEC.listOf().optionalFieldOf("items", List.of()).forGetter(StudioMark::items)
+            Codec.STRING.listOf().optionalFieldOf("items", List.of()).forGetter(StudioMark::items)
     ).apply(instance, StudioMark::new));
 
     public static final StreamCodec<ByteBuf, StudioMark> STREAM_CODEC = StreamCodec.composite(
@@ -154,7 +161,7 @@ public record StudioMark(BlockPos offset, Kind kind, String what, int yaw, Optio
             ByteBufCodecs.VAR_INT, StudioMark::yaw,
             ByteBufCodecs.optional(BlockPos.STREAM_CODEC), StudioMark::to,
             Times.STREAM_CODEC, StudioMark::times,
-            Identifier.STREAM_CODEC.apply(ByteBufCodecs.list(MAX_ITEMS)), StudioMark::items,
+            ByteBufCodecs.stringUtf8(256).apply(ByteBufCodecs.list(MAX_ITEMS)), StudioMark::items,
             StudioMark::new);
 
     /** The particle to show, if the id names a plain particle type (one that needs no extra settings). */
@@ -186,8 +193,7 @@ public record StudioMark(BlockPos offset, Kind kind, String what, int yaw, Optio
                     to.isPresent() ? 0.0F : 0.05F, 0.0F,
                     toAnchor == null ? Optional.empty() : Optional.of(new Target(Optional.of(toAnchor), Optional.empty(), Map.of(), Vec3.ZERO)),
                     List.of(times.leave() / 100.0F, times.arrive() / 100.0F),
-                    items.stream().map(item -> BuiltInRegistries.ITEM.getOptional(item).orElse(null))
-                            .filter(java.util.Objects::nonNull).toList());
+                    List.copyOf(items));
         };
     }
 }

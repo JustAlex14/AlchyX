@@ -156,7 +156,7 @@ destructuration chamber):
 | `phase` | 0 | degrees added to the angle: items sharing one orbit stay apart (e.g. 0 / 120 / 240) |
 | `to` | | a target the item travels to as the operation goes on: at `at` when it begins, at `to` when it ends (an ore carried from the hopper to the press) |
 | `travel` | `[0, 1]` | when in the operation the item leaves `at` and reaches `to` |
-| `items` | | item ids shown in turn through the operation (or its `between`) instead of a display, e.g. `["minecraft:stone", "minecraft:cobblestone", "minecraft:gravel"]`; `display` may then be left out |
+| `items` | | shown in turn through the operation (or its `between`) instead of one display: item ids, or display names, e.g. `["input", "minecraft:cobblestone", "minecraft:gravel"]`; `display` may then be left out |
 
 ## `figure`
 

@@ -182,13 +182,14 @@ public sealed interface Effect permits Effect.Particle, Effect.Sound, Effect.Blo
      * orbit, e.g. 0 / 120 / 240, stay apart). "to": the item travels from "at" to there as the operation goes on
      * (at "at" when it begins, at "to" when it ends): an ore carried from the hopper to the press. "travel"
      * ([from, until], fractions of the operation, default [0, 1]): when it leaves "at" and when it reaches "to".
-     * "items": item ids shown in turn through the operation (or its "between"), instead of a display: stone, then
-     * cobblestone, then gravel. Then "display" may be left out.
+     * "items": shown in turn through the operation (or its "between"), instead of one display: item ids, or display
+     * names ("input": what the machine's display shows), e.g. ["input", "minecraft:cobblestone", "minecraft:gravel"].
+     * Then "display" may be left out.
      */
     record FloatingItem(Timing timing, String display, Target at, ItemMotion motion, float speed,
                         Optional<Float> workingSpeed, float radius, int copies, int perItems, float scale,
                         float bob, float phase, Optional<Target> to, List<Float> travel,
-                        List<net.minecraft.world.item.Item> items) implements Effect {
+                        List<String> items) implements Effect {
         public static final MapCodec<FloatingItem> MAP_CODEC = RecordCodecBuilder.<FloatingItem>mapCodec(instance -> instance.group(
                 Timing.MAP_CODEC.forGetter(FloatingItem::timing),
                 Codec.STRING.optionalFieldOf("display", "").forGetter(FloatingItem::display),
@@ -204,8 +205,7 @@ public sealed interface Effect permits Effect.Particle, Effect.Sound, Effect.Blo
                 Codec.FLOAT.optionalFieldOf("phase", 0.0F).forGetter(FloatingItem::phase),
                 Target.CODEC.optionalFieldOf("to").forGetter(FloatingItem::to),
                 Codec.floatRange(0.0F, 1.0F).listOf(2, 2).optionalFieldOf("travel", List.of(0.0F, 1.0F)).forGetter(FloatingItem::travel),
-                net.minecraft.core.registries.BuiltInRegistries.ITEM.byNameCodec().listOf(0, 64).optionalFieldOf("items", List.of())
-                        .forGetter(FloatingItem::items)
+                Codec.STRING.listOf(0, 64).optionalFieldOf("items", List.of()).forGetter(FloatingItem::items)
         ).apply(instance, FloatingItem::new)).validate(i -> !i.display.isEmpty() || !i.items.isEmpty() ? DataResult.success(i)
                 : DataResult.error(() -> "an item effect needs \"display\" or \"items\""));
 
@@ -213,12 +213,22 @@ public sealed interface Effect permits Effect.Particle, Effect.Sound, Effect.Blo
          * The stack shown now: from "items", the one this point (0 to 1) of the operation has reached (through
          * "between" if set), else {@code display} (what the machine's display holds).
          */
-        public net.minecraft.world.item.ItemStack shown(java.util.function.Supplier<net.minecraft.world.item.ItemStack> display, float progress) {
-            if (items.isEmpty()) return display.get();
+        public net.minecraft.world.item.ItemStack shown(java.util.function.Function<String, net.minecraft.world.item.ItemStack> displays,
+                                                        float progress) {
+            if (items.isEmpty()) return displays.apply(display);
             float span = timing().until() - timing().from();
             float local = span < 1e-4F ? 1 : (progress - timing().from()) / span;
-            int index = Math.max(0, Math.min(items.size() - 1, (int) (local * items.size())));
-            return new net.minecraft.world.item.ItemStack(items.get(index));
+            String entry = items.get(Math.max(0, Math.min(items.size() - 1, (int) (local * items.size()))));
+            return entryStack(entry, displays);
+        }
+
+        /** An "items" entry as a stack: an item id ("minecraft:gravel"), or a display's name ("input": what it shows). */
+        public static net.minecraft.world.item.ItemStack entryStack(String entry,
+                                                                    java.util.function.Function<String, net.minecraft.world.item.ItemStack> displays) {
+            if (!entry.contains(":")) return displays.apply(entry);
+            Identifier id = Identifier.tryParse(entry);
+            return id == null ? net.minecraft.world.item.ItemStack.EMPTY : net.minecraft.core.registries.BuiltInRegistries.ITEM.getOptional(id)
+                    .map(net.minecraft.world.item.ItemStack::new).orElse(net.minecraft.world.item.ItemStack.EMPTY);
         }
 
         /** Where the item is between "at" and "to" at this point (0 to 1) of the operation; just "at" without "to". */

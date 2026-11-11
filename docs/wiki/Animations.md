@@ -131,6 +131,17 @@ rest of the time the blocks look as they are.
 
 With `between`, the steps play only in that part of the operation (spread through it), and the blocks look as they are the rest of the time.
 
+`step_times` (optional, one number from 0 to 1 per step, in order) makes each step a keyframe: it shows from its
+time to the next one's, and the blocks look as they are before the first. That's what the Machine Studio's
+**State...** saves:
+
+```json
+{"type": "block_state", "when": "working", "targets": {"anchor": "cauldron"}, "between": [0.2, 1.0],
+ "steps": [{"block": "minecraft:water_cauldron", "level": 1}, {"block": "minecraft:water_cauldron", "level": 3},
+           {"block": "minecraft:lava_cauldron"}],
+ "step_times": [0.2, 0.5, 0.8]}
+```
+
 On a machine in the world this changes formed parts (the same way as a block move's `swap`). A core block draws
 itself, so a core that changes look does it in its own code there, and gives its file a `block_state` with
 `"where": "miniature"` for the miniatures.

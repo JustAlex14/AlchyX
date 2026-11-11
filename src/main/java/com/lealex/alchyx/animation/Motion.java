@@ -105,7 +105,7 @@ public enum Motion implements StringRepresentable {
             case LIGHT -> look.hasProperty(BlockStateProperties.LIT);
             case OPEN -> look.hasProperty(BlockStateProperties.OPEN);
             case FILL, FILL_LAVA, FILL_SNOW, GROW -> !steps(look).isEmpty();
-            case CHANGE -> !look.getProperties().isEmpty();
+            case CHANGE -> !look.getProperties().isEmpty() || isCauldronLook(look);
             default -> true;
         };
     }
@@ -129,6 +129,11 @@ public enum Motion implements StringRepresentable {
             case GROW -> numberSteps(look, "age");
             default -> List.of();
         };
+    }
+
+    /** Whether it's a cauldron (empty, or with water, lava or powder snow): a change may swap what it holds. */
+    public static boolean isCauldronLook(BlockState look) {
+        return isCauldron(look);
     }
 
     private static boolean isCauldron(BlockState look) {
@@ -186,7 +191,13 @@ public enum Motion implements StringRepresentable {
         if (!moves()) {
             List<Map<String, String>> steps = steps(look, setup);
             if (steps.isEmpty()) return null;
-            return new Effect.StateSteps(new Timing(when, 1, 1.0F, 0, Map.of(), Timing.Where.EVERYWHERE).between(from, until), target, steps);
+            Timing timing = new Timing(when, 1, 1.0F, 0, Map.of(), Timing.Where.EVERYWHERE).between(from, until);
+            if (this == CHANGE) { // each step from its keyframe
+                List<Float> times = new java.util.ArrayList<>();
+                for (int i = 0; i < steps.size(); i++) times.add(setup.time(i) / 100.0F);
+                return new Effect.StateSteps(timing, target, steps, times);
+            }
+            return new Effect.StateSteps(timing, target, steps);
         }
         if (this == STRIKE && isPiston(look)) {
             String head = look.is(Blocks.STICKY_PISTON) ? "sticky" : "normal";
@@ -199,9 +210,9 @@ public enum Motion implements StringRepresentable {
         return new Effect.BlockMove(timing, target, Optional.empty(), direction, false, Map.of(), keyframes, true);
     }
 
-    /** The looks a change goes through, as {@code setup} says (a change: the state it picked, or none). */
+    /** The looks a change goes through, as {@code setup} says (a change: its steps, each from its keyframe). */
     public List<Map<String, String>> steps(BlockState look, MotionSetup setup) {
-        if (this == CHANGE) return setup.state().isEmpty() ? List.of() : List.of(setup.state());
+        if (this == CHANGE) return setup.steps();
         return steps(look);
     }
 

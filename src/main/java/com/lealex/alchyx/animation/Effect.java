@@ -260,15 +260,29 @@ public sealed interface Effect permits Effect.Particle, Effect.Sound, Effect.Blo
      * (a brewing stand whose bottles fill one by one). A single step is simply that look while "when" holds. The rest
      * of the time the blocks look as they are.
      */
-    record StateSteps(Timing timing, Target targets, List<Map<String, String>> steps) implements Effect {
+    record StateSteps(Timing timing, Target targets, List<Map<String, String>> steps, List<Float> stepTimes) implements Effect {
         public static final MapCodec<StateSteps> MAP_CODEC = RecordCodecBuilder.mapCodec(instance -> instance.group(
                 Timing.MAP_CODEC.forGetter(StateSteps::timing),
                 Target.CODEC.fieldOf("targets").forGetter(StateSteps::targets),
-                BlockLook.STATE.listOf(1, 64).fieldOf("steps").forGetter(StateSteps::steps)
+                BlockLook.STATE.listOf(1, 64).fieldOf("steps").forGetter(StateSteps::steps),
+                Codec.floatRange(0, 1).listOf().optionalFieldOf("step_times", List.of()).forGetter(StateSteps::stepTimes)
         ).apply(instance, StateSteps::new));
 
-        /** Which step shows at this point (0 to 1) of the operation (through "between" if set). */
+        public StateSteps(Timing timing, Target targets, List<Map<String, String>> steps) {
+            this(timing, targets, steps, List.of());
+        }
+
+        /**
+         * Which step shows at this point (0 to 1) of the operation: with "step_times" (one per step, in order), the
+         * last one whose time has come, or -1 before the first; else the steps share the time evenly (through
+         * "between" if set).
+         */
         public int index(float progress) {
+            if (stepTimes.size() == steps.size()) {
+                int at = -1;
+                for (int i = 0; i < steps.size(); i++) if (progress >= stepTimes.get(i) - 1e-4F) at = i;
+                return at;
+            }
             float span = timing.until() - timing.from();
             float local = span < 1e-4F ? 1 : (progress - timing.from()) / span;
             return Math.max(0, Math.min(steps.size() - 1, (int) (local * steps.size())));

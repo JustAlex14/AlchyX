@@ -236,7 +236,7 @@ public class StudioScreen extends Screen {
         dataButton = addRenderableWidget(Button.builder(Component.literal("Data..."), b -> editData())
                 .bounds(px + 2 * (third + 2), py, wide - 2 * (third + 2), 18).build());
         dataButton.setTooltip(Tooltip.create(Component.literal("The block's data (a spawner's mob, a banner's patterns...): the machine keeps it and shows it")));
-        stateButton.setTooltip(Tooltip.create(Component.literal("Pick the state the block changes to: any property it has (a trial spawner's state, a vault's...)")));
+        stateButton.setTooltip(Tooltip.create(Component.literal("The block's state from the work bar's head: any property it has (a cauldron's level, what it holds, a trial spawner's state...). Each step is a keyframe")));
         blockButtons.addAll(List.of(startButton, stopButton, wholeButton, stateButton, dataButton));
 
         // Anchors: what plays at the spot
@@ -411,7 +411,7 @@ public class StudioScreen extends Screen {
             } else if (motion.fits(looks.get(cell))) {
                 edits.put(cell, motion);
                 MotionSetup setup = setups.get(cell);
-                if (setup != null) putSetup(cell, setup.withState(Map.of())); // (a state is only for a change)
+                if (setup != null) putSetup(cell, setup.withoutSteps()); // (a state is only for a change)
             }
         }
         stillDirty = true;
@@ -463,26 +463,44 @@ public class StudioScreen extends Screen {
         }));
     }
 
-    /** Opens the state menu for the chosen blocks (the first one's properties); they then change to what's picked. */
+    /**
+     * Opens the state menu for the chosen blocks, on the step of their change showing at the work bar's head (the first
+     * block's), or a new step there. What's picked goes to all of them; a change left with no step stops.
+     */
     private void pickState() {
         if (chosen.isEmpty() || !rules.motions().contains(Motion.CHANGE)) return;
         List<BlockPos> cells = new ArrayList<>(chosen);
         BlockPos first = cells.getFirst();
         BlockState look = looks.get(first);
         if (look == null || !Motion.CHANGE.fits(look)) return;
+        float progress = progress(0);
+        int now = Math.round(progress * 100);
         MotionSetup current = edits.get(first) == Motion.CHANGE ? setups.getOrDefault(first, MotionSetup.ALWAYS) : MotionSetup.ALWAYS;
-        minecraft.setScreen(new StatePickerScreen(this, look, current.state(), state -> {
+        int index = current.stepAt(progress);
+        boolean editing = index >= 0;
+        String where = editing ? "step " + (index + 1) + " of " + current.steps().size() + ", from " + seconds(current.time(index))
+                : "a new step from " + seconds(now);
+        Map<String, String> start = editing ? current.steps().get(index) : Map.of();
+        minecraft.setScreen(new StatePickerScreen(this, look, start, where, editing, (action, state) -> {
             for (BlockPos cell : cells) {
                 BlockState own = looks.get(cell);
                 if (own == null || !Motion.CHANGE.fits(own)) continue;
-                if (state.isEmpty()) {
+                MotionSetup setup = edits.get(cell) == Motion.CHANGE ? setups.getOrDefault(cell, MotionSetup.ALWAYS)
+                        : setups.getOrDefault(cell, MotionSetup.ALWAYS).withoutSteps();
+                int at = setup.stepAt(progress);
+                setup = switch (action) {
+                    case SET -> setup.withStep(at < 0 ? setup.steps().size() : at, state, now);
+                    case ADD -> setup.withStep(setup.steps().size(), state, now);
+                    case REMOVE -> at < 0 ? setup : setup.withoutStep(at);
+                };
+                setup = setup.tidy(Motion.CHANGE, own);
+                if (setup.steps().isEmpty()) {
                     if (edits.get(cell) == Motion.CHANGE) {
                         edits.remove(cell);
                         setups.remove(cell);
                     }
                     continue;
                 }
-                MotionSetup setup = setups.getOrDefault(cell, MotionSetup.ALWAYS).withState(state).tidy(Motion.CHANGE, own);
                 edits.put(cell, Motion.CHANGE);
                 putSetup(cell, setup);
             }
@@ -766,6 +784,21 @@ public class StudioScreen extends Screen {
     /** One timed thing: its name, its start and end (percent of the work), its color, and how to change them. */
     private record Track(String name, int from, int until, int color, java.util.function.BiConsumer<Integer, Integer> set) {}
 
+    /** A change's step in a few words: what a cauldron holds, then its values. */
+    private static String stepName(Map<String, String> step) {
+        List<String> parts = new ArrayList<>();
+        String block = step.get("block");
+        if (block != null) parts.add(switch (block) {
+            case "minecraft:cauldron" -> "empty";
+            case "minecraft:water_cauldron" -> "water";
+            case "minecraft:lava_cauldron" -> "lava";
+            case "minecraft:powder_snow_cauldron" -> "snow";
+            default -> block;
+        });
+        for (Map.Entry<String, String> entry : step.entrySet()) if (!entry.getKey().equals("block")) parts.add(entry.getKey() + " " + entry.getValue());
+        return String.join(", ", parts);
+    }
+
     private List<Track> tracks() {
         List<Track> tracks = new ArrayList<>();
         if (tab == Tab.BLOCKS) {
@@ -773,6 +806,25 @@ public class StudioScreen extends Screen {
             BlockPos first = chosen.iterator().next();
             MotionSetup setup = setups.getOrDefault(first, MotionSetup.ALWAYS);
             List<BlockPos> cells = new ArrayList<>(chosen);
+            if (edits.get(first) == Motion.CHANGE && !setup.steps().isEmpty()) { // a change: a bar for each step, keyframe to keyframe
+                int count = setup.steps().size();
+                for (int i = 0; i < count && i < 12; i++) {
+                    int index = i;
+                    int end = i + 1 < count ? setup.time(i + 1) : setup.until();
+                    tracks.add(new Track("Step " + (i + 1) + ": " + stepName(setup.steps().get(i)), setup.time(i), end, ACCENT,
+                            (from, until) -> {
+                                for (BlockPos cell : cells) {
+                                    MotionSetup own = setups.getOrDefault(cell, MotionSetup.ALWAYS);
+                                    if (edits.get(cell) != Motion.CHANGE || own.steps().size() != count) continue;
+                                    own = own.withStepTime(index, from);
+                                    own = index + 1 < count ? own.withStepTime(index + 1, until) : own.withTimes(own.from(), until);
+                                    putSetup(cell, own);
+                                }
+                                stillDirty = true;
+                            }));
+                }
+                return tracks;
+            }
             tracks.add(new Track(chosen.size() == 1 ? label(edits.get(first)) : chosen.size() + " blocks", setup.from(), setup.until(), ACCENT,
                     (from, until) -> {
                         for (BlockPos cell : cells) putSetup(cell, setups.getOrDefault(cell, MotionSetup.ALWAYS).withTimes(from, until));
@@ -1163,9 +1215,9 @@ public class StudioScreen extends Screen {
                     graphics.text(font, setup.always() ? "All along the work" : seconds(setup.from()) + " to " + seconds(setup.until()), tx, y, TEXT, false);
                     y += 11;
                 }
-                for (Map.Entry<String, String> entry : setup.state().entrySet()) {
+                for (int i = 0; i < setup.steps().size(); i++) {
                     if (y > viewY1() - 30) break;
-                    graphics.text(font, clip(entry.getKey() + ": " + entry.getValue()), tx, y, ACCENT, false);
+                    graphics.text(font, clip(seconds(setup.time(i)) + ": " + stepName(setup.steps().get(i))), tx, y, ACCENT, false);
                     y += 10;
                 }
             }
@@ -1257,6 +1309,10 @@ public class StudioScreen extends Screen {
         List<Map<String, String>> steps = motion.steps(look, setup);
         float progress = progress(0);
         if (steps.isEmpty() || !setup.plays(progress)) return look;
+        if (motion == Motion.CHANGE) { // each step from its keyframe
+            int at = setup.stepAt(progress);
+            return at < 0 ? look : BlockLook.apply(look, steps.get(at));
+        }
         float span = (setup.until() - setup.from()) / 100.0F;
         float local = span < 1e-4F ? 1 : (progress - setup.from() / 100.0F) / span;
         int step = Mth.clamp((int) (local * steps.size()), 0, steps.size() - 1); // through its time, like on the machine
@@ -1265,7 +1321,10 @@ public class StudioScreen extends Screen {
 
     /** The blocks that stand still now, as one mesh (made again when the layers, the motions, play or a step change). */
     private BoxMesh stillMesh() {
-        int step = (int) (progress(0) * 24); // (fine enough for the steps of any change of look)
+        int step = (int) (progress(0) * 24); // (fine enough for the steps of any even change of look)
+        for (Map.Entry<BlockPos, Motion> edit : edits.entrySet()) { // a change's keyframes, wherever they are
+            if (edit.getValue() == Motion.CHANGE) step = step * 31 + setups.getOrDefault(edit.getKey(), MotionSetup.ALWAYS).stepAt(progress(0));
+        }
         if (still == null || stillDirty || still.isStale() || step != stillStep) {
             ClientLevel level = Minecraft.getInstance().level;
             still = BoxMesh.build(level, corePos, BlockBox.of(size.getX(), size.getY(), size.getZ(), false, (x, y, z) -> {

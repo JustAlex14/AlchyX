@@ -368,11 +368,76 @@ public abstract class MultiblockCoreBlockEntity extends BlockEntity {
         return structureProblem;
     }
 
+    /**
+     * The structure this machine checks: its pattern file, or for a free-build machine (a file with "free_build", see
+     * multiblock/FreeBuild) the shape a player recorded for this core, once there is one.
+     */
     public @Nullable MultiblockPattern pattern() {
+        MultiblockPattern file = filePattern();
+        if (recordedShape != null && file != null && file.freeBuild().isPresent()) return recordedShape;
+        return file;
+    }
+
+    /** The machine's pattern file as loaded, whatever shape was recorded. */
+    public @Nullable MultiblockPattern filePattern() {
         // The client has its own copy (sent by the server on join and /reload): on a dedicated server the
         // server-side map is empty in the client's JVM
         if (level != null && level.isClientSide()) return MultiblockPatterns.client().get(patternId());
         return MultiblockPatterns.get(patternId());
+    }
+
+    // ---- Free-build machines: the player's own shape (multiblock/FreeBuild, item/StructureRecorderItem) ----
+
+    // The shape recorded for this core (saved and synced), or null
+    private @Nullable MultiblockPattern recordedShape;
+
+    /** The rules of a free-build machine (its file's "free_build"), or null for a machine with a fixed shape. */
+    public com.lealex.alchyx.multiblock.@Nullable FreeBuild freeBuild() {
+        MultiblockPattern file = filePattern();
+        return file == null ? null : file.freeBuild().orElse(null);
+    }
+
+    /** The shape a player recorded for this core, or null. */
+    public @Nullable MultiblockPattern recordedShape() {
+        return recordedShape;
+    }
+
+    /**
+     * Records the build in the box from {@code a} to {@code b} (two opposite corners) as this machine's shape, if it
+     * follows the machine's free-build rules: the machine then forms from it on its next check. Returns what is wrong,
+     * or null when it was recorded. Server side.
+     */
+    public @Nullable String recordShape(BlockPos a, BlockPos b) {
+        if (level == null || level.isClientSide()) return "the server records shapes";
+        MultiblockPattern file = filePattern();
+        com.lealex.alchyx.multiblock.FreeBuild rules = file == null ? null : file.freeBuild().orElse(null);
+        if (file == null || rules == null) return "this machine has a fixed shape, it can't be recorded";
+        if (formed || forming) return "it already stands: sneak and use the Recorder on the core to forget its shape first";
+        String problem = rules.check(level, worldPosition, a, b);
+        if (problem != null) return problem;
+        setRecordedShape(rules.record(level, worldPosition, a, b, file.coreBlock()));
+        return null;
+    }
+
+    /** Forgets the recorded shape: a formed machine breaks (its parts turn back into their blocks). False if none. */
+    public boolean forgetShape() {
+        if (recordedShape == null || level == null || level.isClientSide()) return false;
+        if (formed || forming) {
+            structureProblem = "its shape was forgotten";
+            breakStructure();
+        }
+        builtPattern = null;
+        setRecordedShape(null);
+        return true;
+    }
+
+    private void setRecordedShape(@Nullable MultiblockPattern shape) {
+        recordedShape = shape;
+        occupied = null;
+        if (level != null && !level.isClientSide()) CoreTracker.shape(level, worldPosition, shape);
+        checkRequested = true;
+        setChanged();
+        syncToClients();
     }
 
     /** How the pattern is turned for this core (from the core block's facing, if it has one). */
@@ -495,6 +560,7 @@ public abstract class MultiblockCoreBlockEntity extends BlockEntity {
         if (level != null && !level.isClientSide()) {
             CoreTracker.add(level, worldPosition, patternId());
             CoreTracker.watch(level, worldPosition, watchReach());
+            if (recordedShape != null) CoreTracker.shape(level, worldPosition, recordedShape);
             if (deathReach() > 0) com.lealex.alchyx.multiblock.DeathWatch.add(this);
             checkRequested = true;
         } else if (level != null) {
@@ -644,24 +710,15 @@ public abstract class MultiblockCoreBlockEntity extends BlockEntity {
             structureProblem = "no valid " + patternId() + " pattern loaded (see the log)";
             return;
         }
-        structureProblem = pattern.findProblem(level, worldPosition, rotation());
+        if (recordedShape == null && pattern.freeBuild().isPresent()) {
+            // A free-build machine is nothing until a player records its shape (its file's grid is the core alone)
+            structureProblem = "no shape yet: build it, mark the build with a Structure Recorder, then use the Recorder on the core";
+        } else {
+            structureProblem = pattern.findProblem(level, worldPosition, rotation());
+        }
 
         if (structureProblem != null) {
-            if (formed || forming) {
-                boolean wasFormed = formed;
-                formed = false;
-                forming = false;
-                setChanged();
-                destroyParts(); // the frame is absorbed by the ritual: nothing drops
-                syncToClients();
-                if (wasFormed) invalidateStructureCapabilities();
-                protectedPositions = List.of();
-                onStructureChanged(false);
-                if (!quiet()) {
-                    playSound(worldPosition, SoundEvents.BEACON_DEACTIVATE, 1.0f, 1.0f);
-                    notifyNearbyPlayers(machineName() + " broken: " + structureProblem);
-                }
-            }
+            if (formed || forming) breakStructure();
         } else if (!formed && !forming) {
             forming = true;
             setChanged();
@@ -676,6 +733,23 @@ public abstract class MultiblockCoreBlockEntity extends BlockEntity {
             invalidateStructureCapabilities();
         }
         if (structureProblem == null) builtPattern = pattern;
+    }
+
+    /** The structure no longer holds (structureProblem says why): its parts go, and it tells the players nearby. */
+    private void breakStructure() {
+        boolean wasFormed = formed;
+        formed = false;
+        forming = false;
+        setChanged();
+        destroyParts(); // the frame is absorbed by the ritual: nothing drops
+        syncToClients();
+        if (wasFormed) invalidateStructureCapabilities();
+        protectedPositions = List.of();
+        onStructureChanged(false);
+        if (!quiet()) {
+            playSound(worldPosition, SoundEvents.BEACON_DEACTIVATE, 1.0f, 1.0f);
+            notifyNearbyPlayers(machineName() + " broken: " + structureProblem);
+        }
     }
 
     private boolean hasUnconvertedBlocks(MultiblockPattern pattern) {
@@ -832,6 +906,7 @@ public abstract class MultiblockCoreBlockEntity extends BlockEntity {
         if (!animLevels.isEmpty()) output.store("animLevels", LEVELS_CODEC, animLevels);
         if (formedAt != 0L) output.putLong("formedAt", formedAt);
         if (upgrades != null) upgrades.save(output);
+        if (recordedShape != null) output.store("alchyx_shape", MultiblockPattern.CODEC, recordedShape);
     }
 
     private static final com.mojang.serialization.Codec<Map<String, Integer>> LEVELS_CODEC =
@@ -857,5 +932,7 @@ public abstract class MultiblockCoreBlockEntity extends BlockEntity {
         animLevels.clear();
         input.read("animLevels", LEVELS_CODEC).ifPresent(animLevels::putAll);
         if (upgrades != null) upgrades.load(input);
+        recordedShape = input.read("alchyx_shape", MultiblockPattern.CODEC).orElse(null);
+        occupied = null;
     }
 }

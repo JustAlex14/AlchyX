@@ -94,6 +94,10 @@ public final class AlchyXRegistries {
     public static final DeferredItem<StructureBuilderItem> STRUCTURE_BUILDER =
             ITEMS.registerItem("structure_builder", StructureBuilderItem::new, p -> p.stacksTo(1));
 
+    /** Survival tool: marks a build and records it as a free-build machine's shape (multiblock/FreeBuild). */
+    public static final DeferredItem<com.lealex.alchyx.item.StructureRecorderItem> STRUCTURE_RECORDER =
+            ITEMS.registerItem("structure_recorder", com.lealex.alchyx.item.StructureRecorderItem::new, p -> p.stacksTo(1));
+
     public static final DeferredRegister<CreativeModeTab> CREATIVE_MODE_TABS =
             DeferredRegister.create(Registries.CREATIVE_MODE_TAB, AlchyX.MODID);
 
@@ -105,7 +109,10 @@ public final class AlchyXRegistries {
             () -> CreativeModeTab.builder()
                     .title(Component.translatable("itemGroup.alchyx"))
                     .icon(() -> STRUCTURE_BUILDER.get().getDefaultInstance())
-                    .displayItems((parameters, output) -> output.accept(STRUCTURE_BUILDER.get()))
+                    .displayItems((parameters, output) -> {
+                        output.accept(STRUCTURE_BUILDER.get());
+                        output.accept(STRUCTURE_RECORDER.get());
+                    })
                     .build());
 
     public static void register(IEventBus modEventBus) {

@@ -29,6 +29,9 @@ public final class CoreTracker {
     // Empty unless a mod has such cores, and then matricesNear looks no further than the widest of them.
     private static final Map<ResourceKey<Level>, Map<BlockPos, Integer>> WATCH = new HashMap<>();
     private static int widestWatch = 0;
+    // Cores whose shape a player recorded (FreeBuild): their own pattern, used instead of the file's
+    private static final Map<ResourceKey<Level>, Map<BlockPos, MultiblockPattern>> SHAPES = new HashMap<>();
+    private static int widestShape = 0;
 
     private CoreTracker() {}
 
@@ -56,9 +59,26 @@ public final class CoreTracker {
         widestWatch = Math.max(widestWatch, reach);
     }
 
+    /**
+     * A tracked core's own recorded shape (a free-build machine, see FreeBuild), or null to forget it: block changes
+     * inside it reach the core, and clicks on its parts find it.
+     */
+    public static void shape(Level level, BlockPos pos, @Nullable MultiblockPattern shape) {
+        Map<BlockPos, MultiblockPattern> shapes = SHAPES.computeIfAbsent(level.dimension(), key -> new HashMap<>());
+        if (shape == null) {
+            shapes.remove(pos);
+            return;
+        }
+        shapes.put(pos.immutable(), shape);
+        BlockPos min = shape.minOffset(), max = shape.maxOffset();
+        widestShape = Math.max(widestShape, Math.max(Math.max(-min.getX(), max.getX()), Math.max(-min.getZ(), max.getZ())));
+    }
+
     public static void remove(Level level, BlockPos pos) {
         Map<BlockPos, Integer> watching = WATCH.get(level.dimension());
         if (watching != null) watching.remove(pos);
+        Map<BlockPos, MultiblockPattern> shapes = SHAPES.get(level.dimension());
+        if (shapes != null) shapes.remove(pos);
         Map<BlockPos, Identifier> cores = CORES.get(level.dimension());
         if (cores == null || cores.remove(pos) == null) return;
         Long2ObjectMap<List<BlockPos>> chunks = BY_CHUNK.get(level.dimension());
@@ -81,6 +101,9 @@ public final class CoreTracker {
         if (watching != null && watching.isEmpty()) watching = null;
         int reach = MultiblockPatterns.maxReachChunks();
         if (watching != null) reach = Math.max(reach, (widestWatch + 15) >> 4);
+        Map<BlockPos, MultiblockPattern> shapes = SHAPES.get(level.dimension());
+        if (shapes != null && shapes.isEmpty()) shapes = null;
+        if (shapes != null) reach = Math.max(reach, (widestShape + 15) >> 4);
         int cx = pos.getX() >> 4, cz = pos.getZ() >> 4;
         List<BlockPos> found = null;
         for (int x = cx - reach; x <= cx + reach; x++) {
@@ -88,7 +111,7 @@ public final class CoreTracker {
                 List<BlockPos> inChunk = chunks.get(chunkKey(x, z));
                 if (inChunk == null) continue;
                 for (BlockPos core : inChunk) {
-                    MultiblockPattern pattern = MultiblockPatterns.get(cores.get(core));
+                    MultiblockPattern pattern = shapes != null && shapes.containsKey(core) ? shapes.get(core) : MultiblockPatterns.get(cores.get(core));
                     if ((pattern != null && pattern.isWithinStructure(core, pos)) || watches(watching, core, pos)) {
                         if (found == null) found = new ArrayList<>(2);
                         found.add(core);
@@ -123,5 +146,7 @@ public final class CoreTracker {
         BY_CHUNK.clear();
         WATCH.clear();
         widestWatch = 0;
+        SHAPES.clear();
+        widestShape = 0;
     }
 }

@@ -3,6 +3,7 @@
 A library mod for NeoForge (Minecraft 26.1.2) that lets mods and datapacks define multiblock machines in JSON, and gives them the parts they would otherwise each write.
 
 - Structure patterns with detection, a forming wave and disguised shell blocks
+- Free-build machines: players build their own shape and record it with a Structure Recorder (see the wiki's Free-Build Machines page)
 - Machine animations defined in datapack files (see [ANIMATIONS.md](ANIMATIONS.md))
 - KubeJS support (see [KUBEJS.md](KUBEJS.md))
 - Patchouli integration: every pattern becomes a book multiblock, with fitted previews, and book chapters can unlock when another chapter is read. Book paper can change chapter by chapter, with marks on some pages

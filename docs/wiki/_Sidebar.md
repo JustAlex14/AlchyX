@@ -9,6 +9,7 @@
 - [Getting Started](Getting-Started)
 - [Your First Multiblock](Your-First-Multiblock)
 - [Pattern Format](Pattern-Format)
+- [Free-Build Machines](Free-Build-Machines)
 - [Core Block Entity](Core-Block-Entity)
 - [Inventories and GUIs](Inventories-and-GUIs)
 - [Upgrades](Upgrades)

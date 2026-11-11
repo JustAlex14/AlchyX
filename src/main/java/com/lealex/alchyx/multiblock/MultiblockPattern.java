@@ -46,12 +46,14 @@ import java.util.function.Predicate;
  *       facing, the pattern is used as written.</li>
  *   <li>"anchors" (optional): named spots as [x, y, z] offsets from the core in the written grid, e.g.
  *       "input_shelf": [1, 1, 1]; machines use them for their displays.</li>
+ *   <li>"free_build" (optional): the player chooses the machine's shape, see {@link FreeBuild}. The grid is then
+ *       usually the core alone.</li>
  * </ul>
  */
 public record MultiblockPattern(Optional<Block> core, Optional<Direction> front, List<List<String>> layers,
                                 Map<String, PatternKey> key, Optional<List<List<String>>> result,
                                 Map<String, ResultKey> resultKey, Map<String, BlockPos> anchors,
-                                int[] coreCell) {
+                                int[] coreCell, Optional<FreeBuild> freeBuild) {
 
     /**
      * From the file's fields; the core's cell [layer, row, col] is found once here, since the structure checks, the
@@ -60,7 +62,21 @@ public record MultiblockPattern(Optional<Block> core, Optional<Direction> front,
     public MultiblockPattern(Optional<Block> core, Optional<Direction> front, List<List<String>> layers,
                              Map<String, PatternKey> key, Optional<List<List<String>>> result,
                              Map<String, ResultKey> resultKey, Map<String, BlockPos> anchors) {
-        this(core, front, layers, key, result, resultKey, anchors, findCoreCell(layers, key));
+        this(core, front, layers, key, result, resultKey, anchors, Optional.empty());
+    }
+
+    /** With "free_build" (see {@link FreeBuild}): a machine whose shape each player records for their own core. */
+    public MultiblockPattern(Optional<Block> core, Optional<Direction> front, List<List<String>> layers,
+                             Map<String, PatternKey> key, Optional<List<List<String>>> result,
+                             Map<String, ResultKey> resultKey, Map<String, BlockPos> anchors, Optional<FreeBuild> freeBuild) {
+        this(core, front, layers, key, result, resultKey, anchors, findCoreCell(layers, key), freeBuild);
+    }
+
+    /** The record's form before "free_build" existed. */
+    public MultiblockPattern(Optional<Block> core, Optional<Direction> front, List<List<String>> layers,
+                             Map<String, PatternKey> key, Optional<List<List<String>>> result,
+                             Map<String, ResultKey> resultKey, Map<String, BlockPos> anchors, int[] coreCell) {
+        this(core, front, layers, key, result, resultKey, anchors, coreCell, Optional.empty());
     }
 
     private static int[] findCoreCell(List<List<String>> layers, Map<String, PatternKey> key) {
@@ -85,9 +101,10 @@ public record MultiblockPattern(Optional<Block> core, Optional<Direction> front,
             Codec.unboundedMap(Codec.STRING, PatternKey.CODEC).fieldOf("key").forGetter(MultiblockPattern::key),
             GRID.optionalFieldOf("result").forGetter(MultiblockPattern::result),
             Codec.unboundedMap(Codec.STRING, ResultKey.CODEC).optionalFieldOf("result_key", Map.of()).forGetter(MultiblockPattern::resultKey),
-            Codec.unboundedMap(Codec.STRING, BlockPos.CODEC).optionalFieldOf("anchors", Map.of()).forGetter(MultiblockPattern::anchors)
-    ).apply(instance, (core, front, layers, key, result, resultKey, anchors)
-            -> new MultiblockPattern(core, front, layers, key, result, resultKey, anchors))).validate(MultiblockPattern::validate);
+            Codec.unboundedMap(Codec.STRING, BlockPos.CODEC).optionalFieldOf("anchors", Map.of()).forGetter(MultiblockPattern::anchors),
+            FreeBuild.CODEC.optionalFieldOf("free_build").forGetter(MultiblockPattern::freeBuild)
+    ).apply(instance, (core, front, layers, key, result, resultKey, anchors, freeBuild)
+            -> new MultiblockPattern(core, front, layers, key, result, resultKey, anchors, freeBuild))).validate(MultiblockPattern::validate);
 
     /** The machine's central block ("core" in the file; required). */
     public Block coreBlock() {

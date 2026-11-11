@@ -17,12 +17,14 @@ If you want to add your own machine, pick the way that suits you:
 | Change or add structures with a datapack | [Pattern Format](Pattern-Format) |
 | Change recipes, tags and shapes of AlchyX mods in a modpack | [Modpack Guide](Modpack-Guide) |
 | Animate a machine | [Animations](Animations) |
+| Let players choose a machine's shape | [Free-Build Machines](Free-Build-Machines) |
 
 ## Developer pages
 
 - [Getting Started](Getting-Started): adding AlchyX to your build
 - [Your First Multiblock](Your-First-Multiblock): a complete small machine, from the block to the JSON
 - [Pattern Format](Pattern-Format): every field of a structure file
+- [Free-Build Machines](Free-Build-Machines): machines whose shape each player builds and records
 - [Core Block Entity](Core-Block-Entity): the base class and every method you can override
 - [Inventories and GUIs](Inventories-and-GUIs): items, fluids, energy, menus and the structure preview button
 - [Upgrades](Upgrades): upgrade types, tiers, slots and corruption

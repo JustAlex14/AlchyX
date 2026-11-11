@@ -60,7 +60,7 @@ public class StructureBuilderItem extends Item implements MachineTool {
 
         // The core's own pattern first: several patterns can share a core block (AlchyForbidden's altar, one per tier)
         MultiblockPattern pattern = level.getBlockEntity(core) instanceof com.lealex.alchyx.block.entity.MultiblockCoreBlockEntity entity
-                ? MultiblockPatterns.get(entity.patternId()) : null;
+                ? entity.pattern() : null; // a free-build machine: the shape its player recorded
         if (pattern == null) pattern = MultiblockPatterns.forCore(level.getBlockState(core).getBlock());
         if (pattern == null) {
             tell(player, Component.literal("Not a machine core: right-click the core block of a machine"));

@@ -44,6 +44,7 @@ public class AlchyXClient {
         // Growing machines' parts flying in, sinking away, rising out of the ground (client/growth/GrowthParts)
         com.lealex.alchyx.growth.GrowthPayload.clientReceive = com.lealex.alchyx.client.growth.GrowthParts::receive;
         net.neoforged.neoforge.common.NeoForge.EVENT_BUS.addListener(com.lealex.alchyx.client.growth.GrowthParts::onClientTick);
+        net.neoforged.neoforge.common.NeoForge.EVENT_BUS.addListener(com.lealex.alchyx.client.RecorderOutline::onClientTick);
         net.neoforged.neoforge.common.NeoForge.EVENT_BUS.addListener(com.lealex.alchyx.client.growth.GrowthParts::onExtract);
         net.neoforged.neoforge.common.NeoForge.EVENT_BUS.addListener(com.lealex.alchyx.client.growth.GrowthParts::onSubmit);
         net.neoforged.neoforge.common.NeoForge.EVENT_BUS.addListener((net.neoforged.neoforge.event.entity.player.ItemTooltipEvent event) -> {

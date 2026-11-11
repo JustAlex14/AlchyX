@@ -29,6 +29,10 @@ The Structure Builder (in the AlchyX creative tab) builds a machine for you when
 - In creative it places everything for free.
 - In survival it takes the blocks from your inventory. For a slot that accepts several blocks it uses whichever one you carry. It places nothing until you have everything, and lists what is missing instead. It keeps blocks that are already right and turns blocks that face the wrong way, but it never breaks anything in the way.
 
+## Machines you shape yourself
+
+Some machines have no fixed shape: you build them your own way and record the build with a Structure Recorder. See [Free-Build Machines](Free-Build-Machines).
+
 ## Upgrades and corruption
 
 Some machines take upgrades. They go in a tab on the right side of the machine's screen, one slot per kind. Pushing a machine with upgrades corrupts it: veins in the colours of the installed upgrades creep over the structure, and some machines start to glitch. Breaking a core keeps its upgrades on the dropped item.

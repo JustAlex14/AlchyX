@@ -2,6 +2,7 @@
   "tooltip.alchyx.kept_upgrades": "Keeps its %s upgrade(s): set it down again to get them back",
   "block.alchyx.chamber_shell": "Machine Shell",
   "item.alchyx.structure_builder": "Structure Builder",
+  "item.alchyx.structure_recorder": "Structure Recorder",
   "itemGroup.alchyx": "AlchyX",
   "item.alchyx.manual": "Machine Manual",
   "info.alchyx.manual.landing": "A field guide to the multiblock machines of this world: how to build them, and the structure of each one.",

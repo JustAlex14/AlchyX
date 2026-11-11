@@ -21,6 +21,7 @@ A datapack can override a mod's pattern by using the same id. The machine then u
 | `result_key` | with `result` | what each character of `result` means |
 | `front` | no | `north`, `south`, `east` or `west`: the side the grid's front faces as written |
 | `anchors` | no | named spots, as `[x, y, z]` offsets from the core in the written grid |
+| `free_build` | no | each player builds and records the shape, see [Free-Build Machines](Free-Build-Machines) |
 
 ## The grid
 

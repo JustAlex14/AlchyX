@@ -333,6 +333,11 @@ public final class AnimationEngine {
 
     private static List<BlockPos> scan(ClientLevel level, MultiblockCoreBlockEntity core, Runtime rt, Rotation rotation, Target target) {
         BlockPos a = rt.def.boxMin().rotate(rotation), b = rt.def.boxMax().rotate(rotation);
+        com.lealex.alchyx.multiblock.MultiblockPattern shape = core.recordedShape();
+        if (shape != null) { // a free-build machine: the box its player recorded (written as it stands in the world)
+            a = shape.minOffset();
+            b = shape.maxOffset();
+        }
         BlockPos origin = core.getBlockPos();
         List<BlockPos> found = new ArrayList<>();
         for (BlockPos pos : BlockPos.betweenClosed(

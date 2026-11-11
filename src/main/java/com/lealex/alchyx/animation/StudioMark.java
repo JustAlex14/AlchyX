@@ -14,6 +14,7 @@ import net.minecraft.util.StringRepresentable;
 import net.minecraft.world.phys.Vec3;
 import org.jspecify.annotations.Nullable;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -26,15 +27,16 @@ import java.util.Optional;
  *       says);</li>
  *   <li>{@link Kind#FIGURE}: an entity of that type stands there, turned by {@code yaw} degrees (only drawn: no AI,
  *       no collision).</li>
- *   <li>{@link Kind#ITEM}: the item one of the machine's displays shows ("input", "output", "result") floats there;
- *       with {@code to}, it travels from this spot to that one as the work goes on.</li>
+ *   <li>{@link Kind#ITEM}: items float there. {@code items} lists them (item ids, or a display's name: "input",
+ *       "output", "result"), each with its own {@link ItemShow}: when in the work it shows and how it moves (spins,
+ *       stays still, bobs, or travels to {@code to} through its time). Without items, the display {@code what}
+ *       floats there (and travels to {@code to}, leaving and arriving as {@link Times} say).</li>
  * </ul>
  * {@code what} is the particle type, the entity type or the display. {@link Times}: when in the work it shows, and
- * when a traveling item leaves and arrives. {@code items}: what an item anchor shows in turn, each from its
- * {@code switches} entry (percent of the work; none: they share the time evenly).
+ * when a traveling item leaves and arrives.
  */
 public record StudioMark(BlockPos offset, Kind kind, String what, int yaw, Optional<BlockPos> to, Times times, List<String> items,
-                         List<Integer> switches) {
+                         List<ItemShow> shows) {
 
     /** The most items an item anchor goes through. */
     public static final int MAX_ITEMS = 16;
@@ -60,11 +62,11 @@ public record StudioMark(BlockPos offset, Kind kind, String what, int yaw, Optio
 
         /** The same times kept in 0 to 100, each pair in order. */
         public Times tidy() {
-            int a = clamp(showFrom), b = clamp(showUntil), c = clamp(leave), d = clamp(arrive);
+            int a = clampStatic(showFrom), b = clampStatic(showUntil), c = clampStatic(leave), d = clampStatic(arrive);
             return new Times(Math.min(a, b), Math.max(a, b), Math.min(c, d), Math.max(c, d));
         }
 
-        private static int clamp(int percent) {
+        static int clampStatic(int percent) {
             return Math.max(0, Math.min(100, percent));
         }
 
@@ -79,11 +81,77 @@ public record StudioMark(BlockPos offset, Kind kind, String what, int yaw, Optio
 
         /** How far along its way a traveling item is at this point (0 to 1) of the work. */
         public float travel(float progress) {
-            float start = leave / 100.0F, end = arrive / 100.0F;
+            return Times.along(progress, leave, arrive);
+        }
+
+        /** How far from {@code from} to {@code until} (percent) this point (0 to 1) of the work is, 0 to 1. */
+        static float along(float progress, int from, int until) {
+            float start = from / 100.0F, end = until / 100.0F;
             if (end - start < 1e-4F) return progress >= end ? 1 : 0;
             return Math.max(0, Math.min(1, (progress - start) / (end - start)));
         }
     }
+
+    /** How one item of an item anchor moves while it shows. */
+    public enum Style implements StringRepresentable {
+        SPIN("spin"), STILL("still"), BOB("bob"), TRAVEL("travel");
+
+        public static final Codec<Style> CODEC = StringRepresentable.fromEnum(Style::values);
+        private final String name;
+
+        Style(String name) {
+            this.name = name;
+        }
+
+        @Override
+        public String getSerializedName() {
+            return name;
+        }
+    }
+
+    /**
+     * One item's time and way of moving: it shows from {@code from} to {@code until} (percent of the work) and
+     * {@code style} says how it moves; a traveling one goes from the anchor to its "to" spot through that time.
+     */
+    public record ItemShow(int from, int until, Style style) {
+        public static final Codec<ItemShow> CODEC = RecordCodecBuilder.create(instance -> instance.group(
+                Codec.intRange(0, 100).optionalFieldOf("from", 0).forGetter(ItemShow::from),
+                Codec.intRange(0, 100).optionalFieldOf("until", 100).forGetter(ItemShow::until),
+                Style.CODEC.optionalFieldOf("style", Style.SPIN).forGetter(ItemShow::style)
+        ).apply(instance, ItemShow::new));
+
+        public static final StreamCodec<ByteBuf, ItemShow> STREAM_CODEC = StreamCodec.composite(
+                ByteBufCodecs.VAR_INT, ItemShow::from, ByteBufCodecs.VAR_INT, ItemShow::until,
+                ByteBufCodecs.idMapper(i -> Style.values()[Math.floorMod(i, Style.values().length)], Style::ordinal), ItemShow::style,
+                ItemShow::new);
+
+        public ItemShow tidy() {
+            int a = Times.clampStatic(from), b = Times.clampStatic(until);
+            return new ItemShow(Math.min(a, b), Math.max(a, b), style);
+        }
+
+        public boolean shows(float progress) {
+            return progress * 100 >= from && progress * 100 <= until;
+        }
+
+        /** How far along its way a traveling item is at this point (0 to 1) of the work. */
+        public float travel(float progress) {
+            return Times.along(progress, from, until);
+        }
+
+        public ItemShow withFrom(int from) {
+            return new ItemShow(from, until, style);
+        }
+
+        public ItemShow withUntil(int until) {
+            return new ItemShow(from, until, style);
+        }
+
+        public ItemShow withStyle(Style style) {
+            return new ItemShow(from, until, style);
+        }
+    }
+
     public enum Kind implements StringRepresentable {
         PARTICLES("particles"), FIGURE("figure"), ITEM("item");
 
@@ -110,87 +178,65 @@ public record StudioMark(BlockPos offset, Kind kind, String what, int yaw, Optio
     }
 
     public StudioMark withWhat(String what) {
-        return new StudioMark(offset, kind, what, yaw, to, times, items, switches);
+        return new StudioMark(offset, kind, what, yaw, to, times, items, shows);
     }
 
     public StudioMark withYaw(int yaw) {
-        return new StudioMark(offset, kind, what, yaw, to, times, items, switches);
+        return new StudioMark(offset, kind, what, yaw, to, times, items, shows);
     }
 
     public StudioMark withTo(Optional<BlockPos> to) {
-        return new StudioMark(offset, kind, what, yaw, to, times, items, switches);
+        return new StudioMark(offset, kind, what, yaw, to, times, items, shows);
     }
 
     public StudioMark withTimes(Times times) {
-        return new StudioMark(offset, kind, what, yaw, to, times.tidy(), items, switches);
+        return new StudioMark(offset, kind, what, yaw, to, times.tidy(), items, shows);
     }
 
-    /** With these items; their switch times kept if there are as many, else shared evenly again. */
-    public StudioMark withItems(List<String> items) {
-        return new StudioMark(offset, kind, what, yaw, to, times, List.copyOf(items), items.size() == switches.size() ? switches : List.of());
+    /** With these items, each with its show (as many of them). */
+    public StudioMark withItems(List<String> items, List<ItemShow> shows) {
+        return new StudioMark(offset, kind, what, yaw, to, times, List.copyOf(items),
+                shows.size() == items.size() ? List.copyOf(shows) : evenShows(items.size(), to.isPresent()));
     }
 
-    /** Without the item at this place in the list (and its switch time). */
-    public StudioMark withoutItem(int index) {
-        List<String> left = new java.util.ArrayList<>(items);
-        left.remove(index);
-        List<Integer> times = new java.util.ArrayList<>(switches);
-        if (index < times.size()) times.remove(index);
-        return new StudioMark(offset, kind, what, yaw, to, this.times, List.copyOf(left), times.size() == left.size() ? List.copyOf(times) : List.of());
+    /** The item at this place in the list's show (its own, or its even share of the work). */
+    public ItemShow show(int index) {
+        return shows.size() == items.size() ? shows.get(index) : evenShows(items.size(), to.isPresent()).get(index);
     }
 
-    /** With the item at this place in the list coming at {@code percent} of the work (the others kept in order around it). */
-    public StudioMark withSwitch(int index, int percent) {
-        List<Integer> times = new java.util.ArrayList<>();
-        for (int i = 0; i < items.size(); i++) times.add(itemStart(i));
-        times.set(index, Math.max(0, Math.min(100, percent)));
-        for (int i = 0; i < times.size(); i++) {
-            if (i < index) times.set(i, Math.min(times.get(i), times.get(index)));
-            if (i > index) times.set(i, Math.max(times.get(i), times.get(index)));
+    /** {@code count} items sharing the work one after another. */
+    public static List<ItemShow> evenShows(int count, boolean travels) {
+        List<ItemShow> even = new ArrayList<>();
+        for (int i = 0; i < count; i++) {
+            even.add(new ItemShow(Math.round(100F * i / count), Math.round(100F * (i + 1) / count), travels ? Style.TRAVEL : Style.SPIN));
         }
-        return new StudioMark(offset, kind, what, yaw, to, this.times, items, List.copyOf(times));
+        return List.copyOf(even);
     }
 
-    /** When the item at this place in the list comes, in percent of the work (its switch, or its even share). */
-    public int itemStart(int index) {
-        if (switches.size() == items.size()) return switches.get(index);
-        return Math.round(times.showFrom() + (times.showUntil() - times.showFrom()) * index / (float) Math.max(1, items.size()));
+    /** The items that show at this point (0 to 1) of the work (their places in the list). */
+    public List<Integer> shownItems(float progress) {
+        List<Integer> shown = new ArrayList<>();
+        if (!times.shows(progress)) return shown;
+        for (int i = 0; i < items.size(); i++) if (show(i).shows(progress)) shown.add(i);
+        return shown;
     }
 
-    /** Which of the items shows at this point (0 to 1) of the work, like on the machine. */
-    public int itemIndex(float progress) {
-        if (items.isEmpty()) return -1;
-        if (switches.size() == items.size()) {
-            int index = 0;
-            for (int i = 1; i < items.size(); i++) if (progress * 100 >= switches.get(i)) index = i;
-            return index;
-        }
-        float from = times.showFrom() / 100.0F, until = times.showUntil() / 100.0F;
-        float local = until - from < 1e-4F ? 1 : (progress - from) / (until - from);
-        return Math.max(0, Math.min(items.size() - 1, (int) (local * items.size())));
-    }
-
-    /** The same mark with only usable items (at most {@link #MAX_ITEMS}), their switch times in 0 to 100 and in order. */
+    /** The same mark with only usable items (at most {@link #MAX_ITEMS}), each with a tidy show. */
     public StudioMark cleaned() {
         if (kind != Kind.ITEM) return new StudioMark(offset, kind, what, yaw, Optional.empty(), times.tidy(), List.of(), List.of());
-        boolean timed = switches.size() == items.size();
-        List<String> kept = new java.util.ArrayList<>();
-        List<Integer> keptTimes = new java.util.ArrayList<>();
-        int last = 0;
+        List<String> kept = new ArrayList<>();
+        List<ItemShow> keptShows = new ArrayList<>();
         for (int i = 0; i < items.size() && kept.size() < MAX_ITEMS; i++) {
             if (!validEntry(items.get(i))) continue;
             kept.add(items.get(i));
-            if (timed) {
-                last = Math.max(last, Math.max(0, Math.min(100, switches.get(i))));
-                keptTimes.add(last);
-            }
+            keptShows.add(show(i).tidy());
         }
-        return new StudioMark(offset, kind, what, yaw, to, times.tidy(), List.copyOf(kept), timed ? List.copyOf(keptTimes) : List.of());
+        return new StudioMark(offset, kind, what, yaw, to, times.tidy(), List.copyOf(kept), List.copyOf(keptShows));
     }
 
     /** The same mark, its spots moved by this much. */
     public StudioMark shifted(BlockPos by) {
-        return new StudioMark(offset.offset(by), kind, what, yaw, to.map(t -> t.offset(by)), times, items, switches);
+        return new StudioMark(offset.offset(by), kind, what, yaw, to.map(t -> t.offset(by)), times, items, shows);
     }
 
     /** Whether an item anchor's entry is usable: a display's name ("input"), or an item that exists. */
@@ -213,7 +259,7 @@ public record StudioMark(BlockPos offset, Kind kind, String what, int yaw, Optio
             BlockPos.CODEC.optionalFieldOf("to").forGetter(StudioMark::to),
             Times.CODEC.optionalFieldOf("times", Times.ALWAYS).forGetter(StudioMark::times),
             Codec.STRING.listOf().optionalFieldOf("items", List.of()).forGetter(StudioMark::items),
-            Codec.INT.listOf().optionalFieldOf("switches", List.of()).forGetter(StudioMark::switches)
+            ItemShow.CODEC.listOf().optionalFieldOf("shows", List.of()).forGetter(StudioMark::shows)
     ).apply(instance, StudioMark::new));
 
     public static final StreamCodec<ByteBuf, StudioMark> STREAM_CODEC = StreamCodec.composite(
@@ -224,7 +270,7 @@ public record StudioMark(BlockPos offset, Kind kind, String what, int yaw, Optio
             ByteBufCodecs.optional(BlockPos.STREAM_CODEC), StudioMark::to,
             Times.STREAM_CODEC, StudioMark::times,
             ByteBufCodecs.stringUtf8(256).apply(ByteBufCodecs.list(MAX_ITEMS)), StudioMark::items,
-            ByteBufCodecs.VAR_INT.apply(ByteBufCodecs.list(MAX_ITEMS)), StudioMark::switches,
+            ItemShow.STREAM_CODEC.apply(ByteBufCodecs.list(MAX_ITEMS)), StudioMark::shows,
             StudioMark::new);
 
     /** The particle to show, if the id names a plain particle type (one that needs no extra settings). */
@@ -234,30 +280,52 @@ public record StudioMark(BlockPos offset, Kind kind, String what, int yaw, Optio
     }
 
     /**
-     * As an animation effect on the spot named by {@code anchor} (and {@code toAnchor}, the spot an item travels to);
-     * particles and items play while {@code when} holds.
+     * As animation effects on the spot named by {@code anchor} (and {@code toAnchor}, the spot an item travels to);
+     * particles and items play while {@code when} holds. An item anchor with items gives one effect per item.
      */
-    public @Nullable Effect effect(String anchor, @Nullable String toAnchor, Trigger when) {
+    public List<Effect> effects(String anchor, @Nullable String toAnchor, Trigger when) {
         Target at = new Target(Optional.of(anchor), Optional.empty(), Map.of(), Vec3.ZERO);
+        Optional<Target> toTarget = toAnchor == null ? Optional.empty() : Optional.of(new Target(Optional.of(toAnchor), Optional.empty(), Map.of(), Vec3.ZERO));
         Identifier id = id();
         float from = times.showFrom() / 100.0F, until = times.showUntil() / 100.0F;
+        Timing base = new Timing(when, 1, 1.0F, 0, Map.of(), Timing.Where.EVERYWHERE);
         return switch (kind) {
             case PARTICLES -> {
                 ParticleOptions particle = particle(id);
-                if (particle == null) yield null;
-                yield new Effect.Particle(new Timing(when, 4, 1.0F, 0, Map.of(), Timing.Where.EVERYWHERE).between(from, until), Optional.of(particle),
-                        Optional.empty(), at, Optional.empty(), new Vec3(0.25, 0.2, 0.25), 2, 0.01, Effect.ParticleStyle.SPREAD, 0.91);
+                if (particle == null) yield List.of();
+                yield List.of(new Effect.Particle(new Timing(when, 4, 1.0F, 0, Map.of(), Timing.Where.EVERYWHERE).between(from, until), Optional.of(particle),
+                        Optional.empty(), at, Optional.empty(), new Vec3(0.25, 0.2, 0.25), 2, 0.01, Effect.ParticleStyle.SPREAD, 0.91));
             }
-            case FIGURE -> id == null ? null : new Effect.Figure(new Timing(Trigger.ALWAYS, 1, 1.0F, 0, Map.of(), Timing.Where.EVERYWHERE).between(from, until),
+            case FIGURE -> id == null ? List.of() : List.of(new Effect.Figure(new Timing(Trigger.ALWAYS, 1, 1.0F, 0, Map.of(), Timing.Where.EVERYWHERE).between(from, until),
                     Optional.of(id), Optional.empty(), Optional.empty(), at, Optional.empty(), Optional.of((float) yaw), false,
-                    0.0F, 0.0F, 1.0F, false, Optional.empty(), Optional.empty());
-            case ITEM -> new Effect.FloatingItem(new Timing(when, 1, 1.0F, 0, Map.of(), Timing.Where.EVERYWHERE).between(from, until), what, at,
-                    to.isPresent() ? Effect.ItemMotion.STILL : Effect.ItemMotion.SPIN, 1.0F, Optional.of(4.0F), 0.5F, 1, 0, 0.5F,
-                    to.isPresent() ? 0.0F : 0.05F, 0.0F,
-                    toAnchor == null ? Optional.empty() : Optional.of(new Target(Optional.of(toAnchor), Optional.empty(), Map.of(), Vec3.ZERO)),
-                    List.of(times.leave() / 100.0F, times.arrive() / 100.0F),
-                    List.copyOf(items),
-                    switches.size() == items.size() ? switches.stream().map(p -> p / 100.0F).toList() : List.of());
+                    0.0F, 0.0F, 1.0F, false, Optional.empty(), Optional.empty()));
+            case ITEM -> {
+                if (items.isEmpty()) {
+                    yield List.of(new Effect.FloatingItem(base.between(from, until), what, at,
+                            to.isPresent() ? Effect.ItemMotion.STILL : Effect.ItemMotion.SPIN, 1.0F, Optional.of(4.0F), 0.5F, 1, 0, 0.5F,
+                            to.isPresent() ? 0.0F : 0.05F, 0.0F, toTarget, List.of(times.leave() / 100.0F, times.arrive() / 100.0F),
+                            List.of(), List.of()));
+                }
+                List<Effect> each = new ArrayList<>();
+                for (int i = 0; i < items.size(); i++) {
+                    ItemShow show = show(i);
+                    float start = Math.max(from, show.from() / 100.0F), end = Math.min(until, show.until() / 100.0F);
+                    if (end < start) continue;
+                    boolean travels = show.style() == Style.TRAVEL && toTarget.isPresent();
+                    Effect.ItemMotion motion = show.style() == Style.SPIN || (show.style() == Style.TRAVEL && !travels)
+                            ? Effect.ItemMotion.SPIN : Effect.ItemMotion.STILL;
+                    float bob = switch (show.style()) {
+                        case BOB -> 0.12F;
+                        case SPIN -> 0.05F;
+                        case STILL -> 0.0F;
+                        case TRAVEL -> travels ? 0.0F : 0.05F;
+                    };
+                    each.add(new Effect.FloatingItem(base.between(start, end), "", at, motion, 1.0F, Optional.of(4.0F), 0.5F, 1, 0, 0.5F,
+                            bob, 0.0F, travels ? toTarget : Optional.empty(), List.of(show.from() / 100.0F, show.until() / 100.0F),
+                            List.of(items.get(i)), List.of()));
+                }
+                yield List.copyOf(each);
+            }
         };
     }
 }

@@ -89,6 +89,7 @@ public class StudioScreen extends Screen {
     private final Map<BlockPos, Motion> saved = new LinkedHashMap<>();  // as the machine has them
     private final Map<BlockPos, MotionSetup> setups = new LinkedHashMap<>();      // when each motion plays, a change's state (box coordinates)
     private final Map<BlockPos, MotionSetup> savedSetups = new LinkedHashMap<>();
+    private final Map<BlockPos, net.minecraft.nbt.CompoundTag> dataEdits = new LinkedHashMap<>(); // block data changed here (box coordinates)
     private final Map<BlockPos, StudioMark> marks = new LinkedHashMap<>();     // the anchors as changed here (box coordinates)
     private final Map<BlockPos, StudioMark> savedMarks = new LinkedHashMap<>();
     private final Set<BlockPos> chosen = new LinkedHashSet<>();
@@ -117,7 +118,7 @@ public class StudioScreen extends Screen {
     private @Nullable Button particlesButton, figureButton, itemButton, removeButton, previousButton, nextButton, turnButton;
     private @Nullable Button appearButton, vanishButton, leaveButton, arriveButton, alwaysButton, pickItemsButton;
     private final List<Button> blockButtons = new ArrayList<>(); // Blocks tab: when the chosen blocks' motion plays, a change's state
-    private @Nullable Button startButton, stopButton, wholeButton, stateButton;
+    private @Nullable Button startButton, stopButton, wholeButton, stateButton, dataButton;
     private int motionRows;                // rows of motion buttons (Blocks tab)
     private static final int ICONS_PER_ROW = 7;
 
@@ -227,15 +228,18 @@ public class StudioScreen extends Screen {
         stopButton = addRenderableWidget(Button.builder(Component.literal("Stop here"), b -> retimeBlocks(1)).bounds(px + half + 4, py, half, 18).build());
         stopButton.setTooltip(Tooltip.create(Component.literal("It stops at this point of the work")));
         py += ROW;
-        wholeButton = addRenderableWidget(Button.builder(Component.literal("All along"), b -> retimeBlocks(-1)).bounds(px, py, half, 18).build());
+        int third = (wide - 4) / 3;
+        wholeButton = addRenderableWidget(Button.builder(Component.literal("Always"), b -> retimeBlocks(-1)).bounds(px, py, third, 18).build());
         wholeButton.setTooltip(Tooltip.create(Component.literal("It plays all the time again")));
-        stateButton = addRenderableWidget(Button.builder(Component.literal("State..."), b -> pickState()).bounds(px + half + 4, py, half, 18).build());
+        stateButton = addRenderableWidget(Button.builder(Component.literal("State..."), b -> pickState()).bounds(px + third + 2, py, third, 18).build());
+        dataButton = addRenderableWidget(Button.builder(Component.literal("Data..."), b -> editData())
+                .bounds(px + 2 * (third + 2), py, wide - 2 * (third + 2), 18).build());
+        dataButton.setTooltip(Tooltip.create(Component.literal("The block's data (a spawner's mob, a banner's patterns...): the machine keeps it and shows it")));
         stateButton.setTooltip(Tooltip.create(Component.literal("Pick the state the block changes to: any property it has (a trial spawner's state, a vault's...)")));
-        blockButtons.addAll(List.of(startButton, stopButton, wholeButton, stateButton));
+        blockButtons.addAll(List.of(startButton, stopButton, wholeButton, stateButton, dataButton));
 
         // Anchors: what plays at the spot
         py = LIST_TOP;
-        int third = (wide - 4) / 3;
         particlesButton = addRenderableWidget(Button.builder(Component.literal("Particles"), b -> putMark(StudioMark.Kind.PARTICLES))
                 .bounds(px, py, third, 18).build());
         figureButton = addRenderableWidget(Button.builder(Component.literal("Figure"), b -> putMark(StudioMark.Kind.FIGURE))
@@ -267,8 +271,8 @@ public class StudioScreen extends Screen {
         alwaysButton = addRenderableWidget(Button.builder(Component.literal("Reset times"), b -> retime(-1)).bounds(px, py, wide, 18).build());
         alwaysButton.setTooltip(Tooltip.create(Component.literal("Shows all the time, travels through the whole work")));
         py += ROW;
-        pickItemsButton = addRenderableWidget(Button.builder(Component.literal("Pick items..."), b -> pickItems()).bounds(px, py, wide, 18).build());
-        pickItemsButton.setTooltip(Tooltip.create(Component.literal("Choose the items it shows in turn: any item, modded ones too, or a display")));
+        pickItemsButton = addRenderableWidget(Button.builder(Component.literal("Items..."), b -> pickItems()).bounds(px, py, wide, 18).build());
+        pickItemsButton.setTooltip(Tooltip.create(Component.literal("Its items, each with its own time and way of moving: any item, modded ones too, or a display")));
         anchorButtons.addAll(List.of(particlesButton, figureButton, itemButton, previousButton, nextButton, turnButton, removeButton,
                 appearButton, vanishButton, leaveButton, arriveButton, alwaysButton, pickItemsButton));
         refreshButtons();
@@ -308,7 +312,7 @@ public class StudioScreen extends Screen {
     }
 
     private boolean changed() {
-        return !edits.equals(saved) || !setups.equals(savedSetups) || !marks.equals(savedMarks);
+        return !edits.equals(saved) || !setups.equals(savedSetups) || !marks.equals(savedMarks) || !dataEdits.isEmpty();
     }
 
     private void refreshButtons() {
@@ -344,6 +348,10 @@ public class StudioScreen extends Screen {
             button.visible = blocks;
             button.active = moving;
         }
+        if (dataButton != null) dataButton.active = !chosen.isEmpty() && chosen.stream().allMatch(cell -> {
+            BlockState own = looks.get(cell), lead = looks.get(chosen.iterator().next());
+            return own != null && lead != null && own.hasBlockEntity() && own.getBlock() == lead.getBlock();
+        });
         if (stateButton != null) stateButton.active = chosen.size() > 0 && rules.motions().contains(Motion.CHANGE)
                 && chosen.stream().allMatch(cell -> Motion.CHANGE.fits(looks.get(cell)));
 
@@ -412,6 +420,30 @@ public class StudioScreen extends Screen {
         }
         stillDirty = true;
         refreshButtons();
+    }
+
+    /** The data a cell's block keeps now: as changed here, or as its shell in the world has it. */
+    private net.minecraft.nbt.CompoundTag dataOf(BlockPos cell) {
+        net.minecraft.nbt.CompoundTag changed = dataEdits.get(cell);
+        if (changed != null) return changed.copy();
+        ClientLevel level = Minecraft.getInstance().level;
+        if (level != null && level.getBlockEntity(corePos.offset(cell.offset(min)))
+                instanceof com.lealex.alchyx.block.entity.ChamberShellBlockEntity shell) {
+            net.minecraft.nbt.CompoundTag kept = shell.getData();
+            if (kept != null) return kept;
+        }
+        return new net.minecraft.nbt.CompoundTag();
+    }
+
+    /** Opens the data menu for the chosen blocks (the first one's data); they all get what's written there. */
+    private void editData() {
+        if (chosen.isEmpty()) return;
+        List<BlockPos> cells = new ArrayList<>(chosen);
+        BlockState look = looks.get(cells.getFirst());
+        if (look == null || !look.hasBlockEntity()) return;
+        minecraft.setScreen(new DataEditScreen(this, look, dataOf(cells.getFirst()), tag -> {
+            for (BlockPos cell : cells) dataEdits.put(cell, tag.copy());
+        }));
     }
 
     /** Opens the state menu for the chosen blocks (the first one's properties); they then change to what's picked. */
@@ -505,20 +537,20 @@ public class StudioScreen extends Screen {
         refreshButtons();
     }
 
-    /** Opens the item menu for the chosen spot: its item anchor's list, or a new item anchor once items are picked. */
+    /** Opens the item list of the chosen spot's item anchor (a new item anchor once items are added there). */
     private void pickItems() {
         if (spot == null) return;
         BlockPos at = spot;
         StudioMark mark = marks.get(at);
         if (mark != null && mark.kind() != StudioMark.Kind.ITEM) return;
-        List<String> start = mark == null ? List.of() : mark.items();
-        minecraft.setScreen(new ItemPickerScreen(this, start, items -> {
+        StudioMark start = mark != null ? mark : new StudioMark(at, StudioMark.Kind.ITEM, StudioMark.DISPLAYS.getFirst(), 0);
+        minecraft.setScreen(new ItemListScreen(this, start, (items, shows) -> {
             StudioMark now = marks.get(at);
             if (now == null) {
                 if (items.isEmpty() || marks.size() >= StudioMark.MAX) return;
-                now = new StudioMark(at, StudioMark.Kind.ITEM, StudioMark.DISPLAYS.getFirst(), 0);
+                now = start;
             }
-            if (now.kind() == StudioMark.Kind.ITEM) marks.put(at, now.withItems(items));
+            if (now.kind() == StudioMark.Kind.ITEM) marks.put(at, now.withItems(items, shows));
         }));
     }
 
@@ -556,7 +588,10 @@ public class StudioScreen extends Screen {
         setups.forEach((cell, setup) -> {
             if (edits.containsKey(cell)) timings.put(cell.offset(min), setup);
         });
-        connection.send(new ServerboundCustomPayloadPacket(new MachineStudio.Save(corePos, motions, timings, sent)));
+        Map<BlockPos, net.minecraft.nbt.CompoundTag> data = new LinkedHashMap<>();
+        dataEdits.forEach((cell, tag) -> data.put(cell.offset(min), tag));
+        connection.send(new ServerboundCustomPayloadPacket(new MachineStudio.Save(corePos, motions, timings, sent, data)));
+        dataEdits.clear();
         saved.clear();
         saved.putAll(edits);
         savedSetups.clear();
@@ -642,11 +677,8 @@ public class StudioScreen extends Screen {
     @Override
     public boolean mouseClicked(MouseButtonEvent event, boolean doubleClick) {
         int icon = iconUnder(event.x(), event.y());
-        if (icon >= 0 && (event.button() == 0 || event.button() == 1)) {
-            StudioMark mark = marks.get(spot);
-            // Click: it comes at this point of the work (the work bar); right click: out of the list
-            marks.put(spot, event.button() == 1 ? mark.withoutItem(icon) : mark.withSwitch(icon, Math.round(progress(0) * 100)));
-            refreshButtons();
+        if (icon >= 0 && event.button() == 0) { // the anchor's item list, to change them
+            pickItems();
             return true;
         }
         if (event.button() == 0 && onBar(event.x(), event.y())) {
@@ -819,10 +851,11 @@ public class StudioScreen extends Screen {
         super.extractRenderState(graphics, mouseX, mouseY, a);
         int icon = iconUnder(mouseX, mouseY);
         if (icon >= 0 && spot != null && marks.get(spot) != null) {
+            StudioMark.ItemShow show = marks.get(spot).show(icon);
             graphics.setTooltipForNextFrame(font, List.of(entryName(marks.get(spot).items().get(icon)),
-                    Component.literal("Comes at " + marks.get(spot).itemStart(icon) + "% of the work").withStyle(net.minecraft.ChatFormatting.GRAY),
-                    Component.literal("Click: it comes where the work bar is").withStyle(net.minecraft.ChatFormatting.DARK_GRAY),
-                    Component.literal("Right click: take it out").withStyle(net.minecraft.ChatFormatting.DARK_GRAY)), java.util.Optional.empty(), mouseX, mouseY);
+                    Component.literal(show.from() + "% to " + show.until() + "% of the work, " + show.style().getSerializedName())
+                            .withStyle(net.minecraft.ChatFormatting.GRAY),
+                    Component.literal("Click: the item list").withStyle(net.minecraft.ChatFormatting.DARK_GRAY)), java.util.Optional.empty(), mouseX, mouseY);
         }
     }
 
@@ -923,9 +956,9 @@ public class StudioScreen extends Screen {
                     y += 12;
                 }
                 if (!mark.items().isEmpty()) {
-                    graphics.text(font, "Click an item: it comes", tx, y, FAINT, false);
-                    graphics.text(font, "at the work bar. Right", tx, y + 10, FAINT, false);
-                    graphics.text(font, "click: take it out", tx, y + 20, FAINT, false);
+                    graphics.text(font, "Lit: showing now. Under:", tx, y, FAINT, false);
+                    graphics.text(font, "the % it comes. Click", tx, y + 10, FAINT, false);
+                    graphics.text(font, "one: the item list", tx, y + 20, FAINT, false);
                     y += 32;
                 }
             }
@@ -941,13 +974,13 @@ public class StudioScreen extends Screen {
 
     /** Draws an item anchor's items in a row, each with when it comes (the one showing now lit); returns the y under them. */
     private int itemList(GuiGraphicsExtractor graphics, StudioMark mark, int x, int top) {
-        int now = mark.itemIndex(progress(0));
+        List<Integer> now = mark.shownItems(progress(0));
         for (int i = 0; i < mark.items().size(); i++) {
             int ix = x + (i % ICONS_PER_ROW) * 18, iy = top + (i / ICONS_PER_ROW) * ITEM_ROW;
-            graphics.fill(ix - 1, iy - 1, ix + 17, iy + 17, i == now ? ACCENT : EDGE);
+            graphics.fill(ix - 1, iy - 1, ix + 17, iy + 17, now.contains(i) ? ACCENT : EDGE);
             drawEntry(graphics, mark.items().get(i), ix, iy);
-            String at = mark.itemStart(i) + "%";
-            graphics.text(font, at, ix + 8 - font.width(at) / 2, iy + 18, i == now ? TEXT : FAINT, false);
+            String at = Integer.toString(mark.show(i).from());
+            graphics.text(font, at, ix + 8 - font.width(at) / 2, iy + 18, now.contains(i) ? TEXT : FAINT, false);
         }
         return top + (mark.items().isEmpty() ? 0 : ((mark.items().size() + ICONS_PER_ROW - 1) / ICONS_PER_ROW) * ITEM_ROW + 2);
     }
@@ -1093,16 +1126,21 @@ public class StudioScreen extends Screen {
         float progress = progress(partialTicks), time = clock + (playing ? partialTicks : 0);
         for (StudioMark mark : marks.values()) {
             if (mark.kind() != StudioMark.Kind.ITEM || mark.items().isEmpty() || mark.offset().getY() > top || !mark.times().shows(progress)) continue;
-            int index = mark.itemIndex(progress); // the one this point of the work has reached, like on the machine
-            net.minecraft.world.item.ItemStack stack = icon(mark.items().get(index)); // (a display shows its stand-in)
-            if (stack.isEmpty()) continue;
-            net.minecraft.client.renderer.item.ItemStackRenderState state = new net.minecraft.client.renderer.item.ItemStackRenderState();
-            Minecraft.getInstance().getItemModelResolver().updateForTopItem(state, stack,
-                    net.minecraft.world.item.ItemDisplayContext.GROUND, level, null, index);
-            Vec3 at = Vec3.atCenterOf(mark.offset());
-            if (mark.to().isPresent()) at = at.lerp(Vec3.atCenterOf(mark.to().get()), mark.times().travel(progress));
-            else at = at.add(0, playing ? Math.sin(time / 10.0) * 0.05 : 0, 0);
-            items.add(new StudioRenderState.ItemPiece(state, at.add(0, -0.25, 0), mark.to().isPresent() ? 0 : time * 4, 1.0F));
+            for (int index : mark.shownItems(progress)) { // each one in its time, like on the machine
+                net.minecraft.world.item.ItemStack stack = icon(mark.items().get(index)); // (a display shows its stand-in)
+                if (stack.isEmpty()) continue;
+                StudioMark.ItemShow show = mark.show(index);
+                net.minecraft.client.renderer.item.ItemStackRenderState state = new net.minecraft.client.renderer.item.ItemStackRenderState();
+                Minecraft.getInstance().getItemModelResolver().updateForTopItem(state, stack,
+                        net.minecraft.world.item.ItemDisplayContext.GROUND, level, null, index);
+                Vec3 at = Vec3.atCenterOf(mark.offset());
+                boolean travels = show.style() == StudioMark.Style.TRAVEL && mark.to().isPresent();
+                boolean spins = show.style() == StudioMark.Style.SPIN || (show.style() == StudioMark.Style.TRAVEL && !travels);
+                double bob = show.style() == StudioMark.Style.BOB ? 0.12 : spins ? 0.05 : 0;
+                if (travels) at = at.lerp(Vec3.atCenterOf(mark.to().get()), show.travel(progress));
+                else at = at.add(0, playing ? Math.sin(time / 10.0) * bob : 0, 0);
+                items.add(new StudioRenderState.ItemPiece(state, at.add(0, -0.25, 0), spins ? time * 4 : 0, 1.0F));
+            }
         }
         return items;
     }

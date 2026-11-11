@@ -89,6 +89,71 @@ public class ChamberShellBlockEntity extends BlockEntity {
         }
     }
 
+    // ---- The disguise's own block entity data (a spawner's mob, a banner's patterns...) ----
+
+    private @Nullable CompoundTag data;           // as the block had it when it turned into a shell, or as set in the studio
+    private @Nullable BlockEntity puppet;         // client: the disguise's block entity made from it, only drawn
+    private boolean puppetFailed;                 // client: it couldn't be made or ticked: don't try again
+    private long puppetTick = Long.MIN_VALUE;
+
+    /** The disguise's block entity data kept by this shell (a copy), or null. */
+    public @Nullable CompoundTag getData() {
+        return data == null ? null : data.copy();
+    }
+
+    /** Keeps this block entity data for the disguise (null: none); clients draw the disguise's block entity from it. */
+    public void setData(@Nullable CompoundTag data) {
+        this.data = data == null || data.isEmpty() ? null : data.copy();
+        puppet = null;
+        puppetFailed = false;
+        setChanged();
+        if (level != null) level.sendBlockUpdated(worldPosition, getBlockState(), getBlockState(), Block.UPDATE_CLIENTS);
+    }
+
+    public boolean hasData() {
+        return data != null;
+    }
+
+    /**
+     * Client: the disguise's block entity, made from the kept data and ticked once a game tick (a spawner's mob
+     * turns), only to be drawn: it is in no level's list, so it does nothing else. Null if there's none to draw.
+     */
+    public @Nullable BlockEntity puppet() {
+        if (data == null || level == null || !level.isClientSide() || hidden || clientHidden || puppetFailed) return null;
+        BlockState look = clientLook != null ? clientLook : disguise;
+        if (puppet != null && puppet.getBlockState().getBlock() != look.getBlock()) puppet = null;
+        try {
+            if (puppet == null) {
+                if (!(look.getBlock() instanceof net.minecraft.world.level.block.EntityBlock entityBlock)) return null;
+                BlockEntity made = entityBlock.newBlockEntity(worldPosition, look);
+                if (made == null) {
+                    puppetFailed = true;
+                    return null;
+                }
+                made.setLevel(level);
+                made.loadCustomOnly(net.minecraft.world.level.storage.TagValueInput.create(net.minecraft.util.ProblemReporter.DISCARDING,
+                        level.registryAccess(), data));
+                puppet = made;
+            }
+            if (puppet.getBlockState() != look) puppet.setBlockState(look);
+            if (level.getGameTime() != puppetTick) {
+                puppetTick = level.getGameTime();
+                tickPuppet(puppet, look);
+            }
+        } catch (RuntimeException e) { // a block entity that wants more than a look-alike can give: just its block then
+            puppetFailed = true;
+            puppet = null;
+        }
+        return puppet;
+    }
+
+    @SuppressWarnings("unchecked")
+    private <T extends BlockEntity> void tickPuppet(BlockEntity entity, BlockState look) {
+        net.minecraft.world.level.block.entity.BlockEntityTicker<T> ticker =
+                look.getTicker(level, (net.minecraft.world.level.block.entity.BlockEntityType<T>) entity.getType());
+        if (ticker != null) ticker.tick(level, worldPosition, look, (T) entity);
+    }
+
     private net.minecraft.world.phys.@Nullable AABB renderBox;
 
     /** Client: the box the shell renderer is culled with (cached: asked for every visible shell every frame). */
@@ -238,6 +303,7 @@ public class ChamberShellBlockEntity extends BlockEntity {
         output.putInt("tint", tint);
         output.putLong("convertedAt", convertedAt);
         if (veiledBy != 0L) output.putLong("veiledBy", veiledBy);
+        if (data != null) output.store("data", CompoundTag.CODEC, data);
     }
 
     @Override
@@ -250,6 +316,12 @@ public class ChamberShellBlockEntity extends BlockEntity {
         tint = input.getIntOr("tint", 0);
         convertedAt = input.getLongOr("convertedAt", Long.MIN_VALUE / 2);
         veiledBy = input.getLongOr("veiledBy", 0L);
+        CompoundTag readData = input.read("data", CompoundTag.CODEC).orElse(null);
+        if (!java.util.Objects.equals(readData, data)) {
+            data = readData;
+            puppet = null;
+            puppetFailed = false;
+        }
         if (level != null && level.isClientSide() && materializedAt != convertedAt && level.getGameTime() - convertedAt <= 3) {
             // a fresh conversion, once each (not when the chunk loads later); a shell converted again while it stands
             // (another look, the block entity kept) plays it again

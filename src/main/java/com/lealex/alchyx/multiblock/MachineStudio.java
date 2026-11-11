@@ -36,6 +36,8 @@ public final class MachineStudio {
     private static final double REACH_SQUARED = 16 * 16;
     /** The most motions one save may carry (a 32 x 32 x 32 box is the hard limit of a free build). */
     private static final int MAX_MOTIONS = 32 * 32 * 32;
+    /** The most blocks whose data one save changes. */
+    private static final int MAX_DATA = 64;
 
     /** Opens the studio for the core at this position (set by the client). */
     public static Consumer<BlockPos> clientOpen = pos -> {};
@@ -46,8 +48,8 @@ public final class MachineStudio {
     }
 
     /** The studio's save (client to server): every motion of the machine (and when it plays), by offset from the core. */
-    public record Save(BlockPos core, Map<BlockPos, Motion> motions, Map<BlockPos, MotionSetup> setups, List<StudioMark> marks)
-            implements CustomPacketPayload {
+    public record Save(BlockPos core, Map<BlockPos, Motion> motions, Map<BlockPos, MotionSetup> setups, List<StudioMark> marks,
+                       Map<BlockPos, net.minecraft.nbt.CompoundTag> data) implements CustomPacketPayload {
         public static final Type<Save> TYPE = new Type<>(AlchyX.id("studio_save"));
         public static final StreamCodec<RegistryFriendlyByteBuf, Save> STREAM_CODEC = StreamCodec.of(
                 (buf, save) -> {
@@ -60,6 +62,11 @@ public final class MachineStudio {
                     });
                     buf.writeVarInt(save.marks().size());
                     for (StudioMark mark : save.marks()) StudioMark.STREAM_CODEC.encode(buf, mark);
+                    buf.writeVarInt(save.data().size());
+                    save.data().forEach((offset, tag) -> {
+                        BlockPos.STREAM_CODEC.encode(buf, offset);
+                        net.minecraft.network.codec.ByteBufCodecs.COMPOUND_TAG.encode(buf, tag);
+                    });
                 },
                 buf -> {
                     BlockPos core = BlockPos.STREAM_CODEC.decode(buf);
@@ -80,7 +87,14 @@ public final class MachineStudio {
                     if (markCount < 0 || markCount > StudioMark.MAX * 4) throw new IllegalArgumentException("Too many anchors: " + markCount);
                     List<StudioMark> marks = new ArrayList<>();
                     for (int i = 0; i < markCount; i++) marks.add(StudioMark.STREAM_CODEC.decode(buf));
-                    return new Save(core, motions, setups, marks);
+                    int dataCount = buf.readVarInt();
+                    if (dataCount < 0 || dataCount > MAX_DATA) throw new IllegalArgumentException("Too much block data: " + dataCount);
+                    Map<BlockPos, net.minecraft.nbt.CompoundTag> data = new LinkedHashMap<>();
+                    for (int i = 0; i < dataCount; i++) {
+                        BlockPos offset = BlockPos.STREAM_CODEC.decode(buf);
+                        data.put(offset, net.minecraft.network.codec.ByteBufCodecs.COMPOUND_TAG.decode(buf));
+                    }
+                    return new Save(core, motions, setups, marks, data);
                 });
 
         @Override
@@ -108,6 +122,21 @@ public final class MachineStudio {
         int kept = core.setStudio(save.motions(), save.setups(), save.marks());
         if (kept < 0) return;
         int dropped = save.motions().size() + save.marks().size() - kept;
+        // Block data (a spawner's mob...): only on this machine's parts that have a block entity, kept by the shell
+        // and only drawn: it never goes back into a real block, so it can't make anything that wasn't there
+        for (Map.Entry<BlockPos, net.minecraft.nbt.CompoundTag> entry : save.data().entrySet()) {
+            BlockPos at = pos.offset(entry.getKey());
+            if (!core.structureContains(at) || !(level.getBlockEntity(at) instanceof com.lealex.alchyx.block.entity.ChamberShellBlockEntity shell)) {
+                dropped++;
+                continue;
+            }
+            net.minecraft.nbt.CompoundTag tag = entry.getValue();
+            if (!shell.getDisguise().hasBlockEntity() || tag.sizeInBytes() > com.lealex.alchyx.block.ChamberShellBlock.MAX_DATA_BYTES) {
+                dropped++;
+                continue;
+            }
+            shell.setData(tag);
+        }
         player.sendSystemMessage(Component.literal("Machine saved: " + core.motions().size() + " moving blocks, " + core.marks().size() + " anchors"
                 + (dropped > 0 ? " (" + dropped + " left out: this machine doesn't allow them)" : "")), true);
         level.playSound(null, pos, SoundEvents.BOOK_PAGE_TURN, SoundSource.PLAYERS, 1.0f, 1.2f);

@@ -38,6 +38,7 @@ public class ItemPickerScreen extends Screen {
 
     private final Screen parent;
     private final Consumer<List<String>> done;
+    private final @Nullable Consumer<String> single; // pick one: it goes back at once
     private final List<String> chosen;
     private @Nullable EditBox searchBox;
     private String search = "";
@@ -49,6 +50,16 @@ public class ItemPickerScreen extends Screen {
         this.parent = parent;
         this.done = done;
         this.chosen = new ArrayList<>(start);
+        this.single = null;
+    }
+
+    /** Picks one entry: a click on it hands it to {@code picked} and goes back. */
+    public ItemPickerScreen(Screen parent, Consumer<String> picked) {
+        super(Component.literal("Pick an item"));
+        this.parent = parent;
+        this.done = list -> {};
+        this.chosen = new ArrayList<>();
+        this.single = picked;
     }
 
     // ---- Layout ----
@@ -56,7 +67,7 @@ public class ItemPickerScreen extends Screen {
     private int columns() { return Mth.clamp((width - MARGIN * 2) / CELL, 4, 18); }
     private int left() { return (width - columns() * CELL) / 2; }
     private int listTop() { return TOP + 40; }
-    private int gridTop() { return listTop() + CELL + 16; }
+    private int gridTop() { return single != null ? listTop() : listTop() + CELL + 16; }
     private int gridRows() { return Math.max(1, (height - 34 - gridTop()) / CELL); }
 
     @Override
@@ -73,8 +84,9 @@ public class ItemPickerScreen extends Screen {
         });
         setInitialFocus(searchBox);
         int y = height - 26;
-        addRenderableWidget(Button.builder(Component.literal("Done"), b -> finish(true)).bounds(width / 2 - 104, y, 100, 20).build());
-        addRenderableWidget(Button.builder(Component.literal("Cancel"), b -> finish(false)).bounds(width / 2 + 4, y, 100, 20).build());
+        if (single == null) addRenderableWidget(Button.builder(Component.literal("Done"), b -> finish(true)).bounds(width / 2 - 104, y, 100, 20).build());
+        addRenderableWidget(Button.builder(Component.literal("Cancel"), b -> finish(false))
+                .bounds(single == null ? width / 2 + 4 : width / 2 - 50, y, 100, 20).build());
     }
 
     private void finish(boolean keep) {
@@ -116,6 +128,11 @@ public class ItemPickerScreen extends Screen {
     }
 
     private void add(String entry) {
+        if (single != null) {
+            single.accept(entry);
+            minecraft.setScreen(parent);
+            return;
+        }
         if (chosen.size() < StudioMark.MAX_ITEMS) chosen.add(entry);
     }
 
@@ -129,6 +146,7 @@ public class ItemPickerScreen extends Screen {
     }
 
     private int listUnder(double x, double y) {
+        if (single != null) return -1;
         int left = left(), top = listTop();
         if (x < left || y < top || y >= top + CELL) return -1;
         int index = (int) ((x - left) / CELL);
@@ -180,12 +198,13 @@ public class ItemPickerScreen extends Screen {
     @Override
     public void extractRenderState(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float a) {
         int left = left(), right = left + columns() * CELL;
-        graphics.text(font, "Items for this anchor", left, TOP + 2, ACCENT, false);
+        graphics.text(font, single != null ? "Pick an item" : "Items for this anchor", left, TOP + 2, ACCENT, false);
         String count = chosen.size() + " / " + StudioMark.MAX_ITEMS;
-        graphics.text(font, count, right - font.width(count), TOP + 2, chosen.size() >= StudioMark.MAX_ITEMS ? WARN : FAINT, false);
+        if (single == null) graphics.text(font, count, right - font.width(count), TOP + 2, chosen.size() >= StudioMark.MAX_ITEMS ? WARN : FAINT, false);
 
         // The list: shown in turn through the work
         int listTop = listTop();
+        if (single == null) {
         graphics.fill(left - 2, listTop - 2, right + 2, listTop + CELL, PANEL);
         if (chosen.isEmpty()) {
             graphics.text(font, "Nothing yet: it floats what the machine shows as input", left + 2, listTop + 6, FAINT, false);
@@ -193,6 +212,7 @@ public class ItemPickerScreen extends Screen {
         for (int i = 0; i < chosen.size(); i++) {
             int x = left + i * CELL + 1;
             drawEntry(graphics, font, chosen.get(i), x, listTop + 1);
+        }
         }
 
         // The grid
@@ -214,7 +234,8 @@ public class ItemPickerScreen extends Screen {
             graphics.fill(right + 4, gridTop + at, right + 6, gridTop + at + bar, ACCENT);
         }
         if (entries.isEmpty()) graphics.text(font, "Nothing matches", left + 4, gridTop + 6, FAINT, false);
-        String help = "Click: add it  -  click one in the list: take it out  -  Enter: add the first match";
+        String help = single != null ? "Click: pick it  -  Enter: the first match"
+                : "Click: add it  -  click one in the list: take it out  -  Enter: add the first match";
         graphics.text(font, help, (width - font.width(help)) / 2, gridTop + rows * CELL + 5, FAINT, false);
 
         super.extractRenderState(graphics, mouseX, mouseY, a);
@@ -223,7 +244,8 @@ public class ItemPickerScreen extends Screen {
             String id = entries.get(entry);
             List<Component> lines = new ArrayList<>(List.of(entryName(id)));
             if (id.contains(":")) lines.add(Component.literal(id).withStyle(ChatFormatting.DARK_GRAY));
-            lines.add(Component.literal(chosen.size() >= StudioMark.MAX_ITEMS ? "The list is full" : "Click: add it").withStyle(ChatFormatting.DARK_GRAY));
+            lines.add(Component.literal(single != null ? "Click: pick it" : chosen.size() >= StudioMark.MAX_ITEMS ? "The list is full" : "Click: add it")
+                    .withStyle(ChatFormatting.DARK_GRAY));
             graphics.setTooltipForNextFrame(font, lines, Optional.empty(), mouseX, mouseY);
         } else if (listed >= 0) {
             graphics.setTooltipForNextFrame(font, List.of(entryName(chosen.get(listed)),

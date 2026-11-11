@@ -88,8 +88,19 @@ public class ChamberShellBlock extends Block implements EntityBlock {
         // UPDATE_KNOWN_SHAPE: don't make the neighbors recompute their shape. Otherwise a corner stair next to a
         // stair that just became a shell would see "no stair here" and turn straight, breaking the pattern.
         // No UPDATE_NEIGHBORS either: nothing outside the chamber needs to react to a look-alike swap.
+        // The block's own data (a spawner's mob, a banner's patterns...), kept so the shell can show it. Not for
+        // containers: their contents drop as they turn into a shell, and must not be kept twice
+        net.minecraft.nbt.CompoundTag data = null;
+        net.minecraft.world.level.block.entity.BlockEntity old = level.getBlockEntity(pos);
+        if (old != null && !(old instanceof ChamberShellBlockEntity) && !(old instanceof net.minecraft.world.Container)
+                && old.getBlockState().is(disguise.getBlock())) {
+            data = old.saveCustomOnly(level.registryAccess());
+            if (data.sizeInBytes() > MAX_DATA_BYTES) data = null;
+        }
         level.setBlock(pos, shell, Block.UPDATE_CLIENTS | Block.UPDATE_KNOWN_SHAPE);
         if (level.getBlockEntity(pos) instanceof ChamberShellBlockEntity entity) {
+            if (data != null) entity.setData(data);
+            else if (entity.hasData() && !entity.getDisguise().is(disguise.getBlock())) entity.setData(null);
             entity.markConverted(level.getGameTime());
             entity.markVeiled(veiledBy);
             entity.setHidden(hidden);
@@ -97,6 +108,9 @@ public class ChamberShellBlock extends Block implements EntityBlock {
             entity.setDisguise(disguise);
         }
     }
+
+    /** The most block entity data a shell keeps (bytes). */
+    public static final int MAX_DATA_BYTES = 16 * 1024;
 
     /** A shell placed see-through becomes opaque again if its look is (the neighbours hide their faces against it). */
     public static void settle(Level level, BlockPos pos) {

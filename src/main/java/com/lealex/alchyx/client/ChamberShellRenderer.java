@@ -32,6 +32,7 @@ public class ChamberShellRenderer implements BlockEntityRenderer<ChamberShellBlo
     public static class State extends BlockEntityRenderState {
         public @Nullable MovingBlockRenderState head;
         public double dx, dy, dz; // head offset from the base, in blocks
+        public @Nullable BlockEntityRenderState inner; // the disguise's own block entity (a spawner's mob), if it keeps data
     }
 
     public ChamberShellRenderer(BlockEntityRendererProvider.Context context) {}
@@ -46,6 +47,12 @@ public class ChamberShellRenderer implements BlockEntityRenderer<ChamberShellBlo
                                    Vec3 cameraPosition, ModelFeatureRenderer.@Nullable CrumblingOverlay breakProgress) {
         BlockEntityRenderer.super.extractRenderState(shell, state, partialTicks, cameraPosition, breakProgress);
         state.head = null;
+        state.inner = null;
+        net.minecraft.world.level.block.entity.BlockEntity puppet = shell.puppet();
+        if (puppet != null) {
+            state.inner = net.minecraft.client.Minecraft.getInstance().getBlockEntityRenderDispatcher()
+                    .tryExtractRenderState(puppet, partialTicks, breakProgress);
+        }
         BlockState disguise = shell.getDisguise();
         if (!(shell.getLevel() instanceof ClientLevel level)
                 || !(disguise.getBlock() instanceof PistonBaseBlock)
@@ -81,6 +88,7 @@ public class ChamberShellRenderer implements BlockEntityRenderer<ChamberShellBlo
 
     @Override
     public void submit(State state, PoseStack poseStack, SubmitNodeCollector collector, CameraRenderState camera) {
+        if (state.inner != null) net.minecraft.client.Minecraft.getInstance().getBlockEntityRenderDispatcher().submit(state.inner, poseStack, collector, camera);
         if (state.head == null) return;
         poseStack.pushPose();
         poseStack.translate(state.dx, state.dy, state.dz);
@@ -94,7 +102,7 @@ public class ChamberShellRenderer implements BlockEntityRenderer<ChamberShellBlo
     @Override
     public boolean shouldRender(ChamberShellBlockEntity shell, Vec3 cameraPosition) {
         BlockState disguise = shell.getDisguise();
-        return disguise.getBlock() instanceof PistonBaseBlock && disguise.getValue(PistonBaseBlock.EXTENDED)
+        return (shell.hasData() || disguise.getBlock() instanceof PistonBaseBlock && disguise.getValue(PistonBaseBlock.EXTENDED))
                 && BlockEntityRenderer.super.shouldRender(shell, cameraPosition);
     }
 

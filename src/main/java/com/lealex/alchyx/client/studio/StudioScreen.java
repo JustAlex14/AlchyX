@@ -76,7 +76,7 @@ public class StudioScreen extends Screen {
     private static final BlockState PATH_MARK = Blocks.LIGHT_BLUE_STAINED_GLASS.defaultBlockState();
     private static final int OPERATION = 100; // the preview's pretend work: one operation this many ticks long
 
-    private enum Tab { BLOCKS, ANCHORS, ITEMS }
+    private enum Tab { BLOCKS, ANCHORS }
 
     private final BlockPos corePos;
     private final MultiblockPattern shape;
@@ -107,19 +107,13 @@ public class StudioScreen extends Screen {
     private boolean pickingTo;             // the next spot picked is where the chosen item travels to
     private boolean scrubbing;             // the mouse holds the work bar
 
-    private @Nullable Button saveButton, layerDown, layerUp, blocksTab, anchorsTab, itemsTab;
+    private @Nullable Button saveButton, layerDown, layerUp, blocksTab, anchorsTab;
     private final List<Button> motionButtons = new ArrayList<>();
     private final List<@Nullable Motion> motionChoices = new ArrayList<>();
     private final List<Button> anchorButtons = new ArrayList<>();
     private @Nullable Button particlesButton, figureButton, itemButton, removeButton, previousButton, nextButton, turnButton;
-    private @Nullable Button appearButton, vanishButton, leaveButton, arriveButton, alwaysButton;
-    // The Items tab: a search box over a grid of every item (and the machine's displays first)
-    private net.minecraft.client.gui.components.@Nullable EditBox searchBox;
-    private String search = "";
-    private @Nullable List<String> found;  // the grid's entries for the search (made again when it changes)
-    private int scrolled;                  // the grid's first row shown
-    private static final int ITEMS_TOP_ROWS = 7; // the anchor's item list, counted in ROWs under LIST_TOP (Anchors tab)
-    private static final int GRID_COLUMNS = 6, CELL = 20;
+    private @Nullable Button appearButton, vanishButton, leaveButton, arriveButton, alwaysButton, pickItemsButton;
+    private static final int ICONS_PER_ROW = 7;
 
     public StudioScreen(MultiblockCoreBlockEntity core) {
         super(Component.literal("Machine Studio"));
@@ -192,23 +186,11 @@ public class StudioScreen extends Screen {
         addRenderableWidget(Button.builder(Component.literal("Close"), b -> onClose()).bounds(width - MARGIN - 50, y, 50, 20).build());
 
         // The tabs
-        int px = panelX() + 4, wide = PANEL_WIDE - 8, half = (wide - 4) / 2, tabWide = (wide - 4) / 3;
+        int px = panelX() + 4, wide = PANEL_WIDE - 8, half = (wide - 4) / 2, tabWide = (wide - 2) / 2;
         blocksTab = addRenderableWidget(Button.builder(Component.literal("Blocks"), b -> setTab(Tab.BLOCKS)).bounds(px, TOP + 4, tabWide, 18).build());
         anchorsTab = addRenderableWidget(Button.builder(Component.literal("Anchors"), b -> setTab(Tab.ANCHORS))
-                .bounds(px + tabWide + 2, TOP + 4, tabWide, 18).build());
+                .bounds(px + tabWide + 2, TOP + 4, wide - tabWide - 2, 18).build());
         anchorsTab.setTooltip(Tooltip.create(Component.literal("Spots where particles rise, a figure stands or an item floats")));
-        itemsTab = addRenderableWidget(Button.builder(Component.literal("Items"), b -> setTab(Tab.ITEMS))
-                .bounds(px + 2 * (tabWide + 2), TOP + 4, wide - 2 * (tabWide + 2), 18).build());
-        itemsTab.setTooltip(Tooltip.create(Component.literal("Every item, to add to the chosen item anchor")));
-        searchBox = addRenderableWidget(new net.minecraft.client.gui.components.EditBox(font, px, TOP + 26, wide, 16, Component.literal("Search")));
-        searchBox.setHint(Component.literal("Search: stone, input..."));
-        searchBox.setMaxLength(64);
-        searchBox.setValue(search);
-        searchBox.setResponder(text -> {
-            search = text;
-            found = null;
-            scrolled = 0;
-        });
 
         // Blocks: a button per motion this machine allows, and one to keep blocks still
         int py = LIST_TOP;
@@ -262,8 +244,11 @@ public class StudioScreen extends Screen {
         py += ROW;
         alwaysButton = addRenderableWidget(Button.builder(Component.literal("Reset times"), b -> retime(-1)).bounds(px, py, wide, 18).build());
         alwaysButton.setTooltip(Tooltip.create(Component.literal("Shows all the time, travels through the whole work")));
+        py += ROW;
+        pickItemsButton = addRenderableWidget(Button.builder(Component.literal("Pick items..."), b -> pickItems()).bounds(px, py, wide, 18).build());
+        pickItemsButton.setTooltip(Tooltip.create(Component.literal("Choose the items it shows in turn: any item, modded ones too, or a display")));
         anchorButtons.addAll(List.of(particlesButton, figureButton, itemButton, previousButton, nextButton, turnButton, removeButton,
-                appearButton, vanishButton, leaveButton, arriveButton, alwaysButton));
+                appearButton, vanishButton, leaveButton, arriveButton, alwaysButton, pickItemsButton));
         refreshButtons();
     }
 
@@ -280,7 +265,10 @@ public class StudioScreen extends Screen {
             case SWING -> "Swings a quarter turn, like a door";
             case SHAKE -> "Trembles in place";
             case LIGHT -> "Lights up: furnaces, smokers, campfires, candles, lamps";
-            case FILL -> "Fills up as the work goes on: cauldrons, composters, respawn anchors";
+            case FILL -> "Fills up as the work goes on: cauldrons (water), composters, beehives, any block with a fill level, modded too";
+            case FILL_LAVA -> "A cauldron fills with lava";
+            case FILL_SNOW -> "A cauldron fills with powder snow";
+            case GROW -> "Grows: crops, saplings, anything with an age";
             case OPEN -> "Opens: barrels, trapdoors, doors, fence gates";
         };
     }
@@ -300,8 +288,6 @@ public class StudioScreen extends Screen {
         if (saveButton != null) saveButton.active = changed();
         if (blocksTab != null) blocksTab.active = tab != Tab.BLOCKS;
         if (anchorsTab != null) anchorsTab.active = tab != Tab.ANCHORS;
-        if (itemsTab != null) itemsTab.active = tab != Tab.ITEMS;
-        if (searchBox != null) searchBox.visible = tab == Tab.ITEMS;
         boolean blocks = tab == Tab.BLOCKS;
 
         Motion shared = null;
@@ -334,6 +320,7 @@ public class StudioScreen extends Screen {
         if (previousButton != null) previousButton.active = mark != null;
         if (nextButton != null) nextButton.active = mark != null;
         if (removeButton != null) removeButton.active = mark != null;
+        if (pickItemsButton != null) pickItemsButton.active = spot != null && (mark == null ? marks.size() < StudioMark.MAX : mark.kind() == StudioMark.Kind.ITEM);
         boolean travels = mark != null && mark.kind() == StudioMark.Kind.ITEM && mark.to().isPresent();
         for (Button button : new Button[] {appearButton, vanishButton, alwaysButton}) if (button != null) button.active = mark != null;
         for (Button button : new Button[] {leaveButton, arriveButton}) if (button != null) button.active = travels;
@@ -422,91 +409,37 @@ public class StudioScreen extends Screen {
         refreshButtons();
     }
 
-    /** The grid's entries for the search: the machine's displays first, then every item whose id or name holds it. */
-    private List<String> found() {
-        if (found != null) return found;
-        String text = search.trim().toLowerCase(Locale.ROOT);
-        List<String> entries = new ArrayList<>();
-        for (String display : StudioMark.DISPLAYS) {
-            if (text.isEmpty() || display.contains(text) || "display".contains(text)) entries.add(display);
-        }
-        String asId = text.replace(' ', '_');
-        for (Identifier id : BuiltInRegistries.ITEM.keySet()) {
-            net.minecraft.world.item.Item item = BuiltInRegistries.ITEM.getValue(id);
-            if (item == net.minecraft.world.item.Items.AIR) continue;
-            if (text.isEmpty() || id.toString().contains(asId)
-                    || new net.minecraft.world.item.ItemStack(item).getHoverName().getString().toLowerCase(Locale.ROOT).contains(text)) {
-                entries.add(id.toString());
-            }
-        }
-        found = entries;
-        return entries;
-    }
-
-    /** Adds an entry to the chosen anchor's items: an item anchor gets it last; an empty spot becomes an item anchor. */
-    private void addEntry(String entry) {
+    /** Opens the item menu for the chosen spot: its item anchor's list, or a new item anchor once items are picked. */
+    private void pickItems() {
         if (spot == null) return;
-        StudioMark mark = marks.get(spot);
-        if (mark == null) {
-            if (marks.size() >= StudioMark.MAX) return;
-            mark = new StudioMark(spot, StudioMark.Kind.ITEM, StudioMark.DISPLAYS.getFirst(), 0);
-        }
-        if (mark.kind() != StudioMark.Kind.ITEM || mark.items().size() >= StudioMark.MAX_ITEMS) return;
-        List<String> items = new ArrayList<>(mark.items());
-        items.add(entry);
-        marks.put(spot, mark.withItems(items));
-        refreshButtons();
+        BlockPos at = spot;
+        StudioMark mark = marks.get(at);
+        if (mark != null && mark.kind() != StudioMark.Kind.ITEM) return;
+        List<String> start = mark == null ? List.of() : mark.items();
+        minecraft.setScreen(new ItemPickerScreen(this, start, items -> {
+            StudioMark now = marks.get(at);
+            if (now == null) {
+                if (items.isEmpty() || marks.size() >= StudioMark.MAX) return;
+                now = new StudioMark(at, StudioMark.Kind.ITEM, StudioMark.DISPLAYS.getFirst(), 0);
+            }
+            if (now.kind() == StudioMark.Kind.ITEM) marks.put(at, now.withItems(items));
+        }));
     }
 
-    /** What an entry shows: an item, or for a display a stand-in (a chest for input, a barrel for output, a hopper for result). */
     private static net.minecraft.world.item.ItemStack icon(String entry) {
-        if (!entry.contains(":")) {
-            return new net.minecraft.world.item.ItemStack(switch (entry) {
-                case "input" -> net.minecraft.world.item.Items.CHEST;
-                case "output" -> net.minecraft.world.item.Items.BARREL;
-                default -> net.minecraft.world.item.Items.HOPPER;
-            });
-        }
-        return com.lealex.alchyx.animation.Effect.FloatingItem.entryStack(entry, name -> net.minecraft.world.item.ItemStack.EMPTY);
+        return ItemPickerScreen.icon(entry);
     }
 
     private static Component entryName(String entry) {
-        if (!entry.contains(":")) return Component.literal(capital(entry) + ": what the machine's display shows");
-        return icon(entry).getHoverName();
+        return ItemPickerScreen.entryName(entry);
     }
 
     private void drawEntry(GuiGraphicsExtractor graphics, String entry, int x, int y) {
-        graphics.item(icon(entry), x, y);
-        if (!entry.contains(":")) { // a display: its name over the stand-in
-            String tag = entry.equals("input") ? "IN" : entry.equals("output") ? "OUT" : "RES";
-            graphics.text(font, tag, x + 17 - font.width(tag), y + 9, WARN, true);
-        }
-    }
-
-    /** The grid's top, its rows that fit, and the entry under the mouse (its index in found()), or -1. */
-    private int gridTop() { return TOP + 48 + listRows() * 18 + 16; }
-
-    private int gridRows() { return Math.max(1, (viewY1() - 4 - gridTop()) / CELL); }
-
-    private int listRows() {
-        StudioMark mark = spot == null ? null : marks.get(spot);
-        int count = mark == null || mark.kind() != StudioMark.Kind.ITEM ? 0 : mark.items().size();
-        return Math.max(1, (count + ICONS_PER_ROW - 1) / ICONS_PER_ROW);
-    }
-
-    private int gridUnder(double x, double y) {
-        if (tab != Tab.ITEMS) return -1;
-        int left = panelX() + 5, gridTop = gridTop();
-        if (x < left || y < gridTop) return -1;
-        int column = (int) ((x - left) / CELL), row = (int) ((y - gridTop) / CELL);
-        if (column >= GRID_COLUMNS || row >= gridRows()) return -1;
-        int index = (scrolled + row) * GRID_COLUMNS + column;
-        return index < found().size() ? index : -1;
+        ItemPickerScreen.drawEntry(graphics, font, entry, x, y);
     }
 
     /** Where the item list's icons start, and how many go in a row. */
-    private int itemsY() { return tab == Tab.ITEMS ? TOP + 58 : LIST_TOP + ITEMS_TOP_ROWS * ROW + 4; }
-    private static final int ICONS_PER_ROW = 7;
+    private int itemsY() { return LIST_TOP + 7 * ROW + 18; }
 
     private void layers(int change) {
         top = Mth.clamp(top + change, 0, size.getY() - 1);
@@ -613,11 +546,6 @@ public class StudioScreen extends Screen {
             refreshButtons();
             return true;
         }
-        int entry = gridUnder(event.x(), event.y());
-        if (entry >= 0 && event.button() == 0) {
-            addEntry(found().get(entry));
-            return true;
-        }
         if (event.button() == 0 && onBar(event.x(), event.y())) {
             scrubbing = true;
             if (playing) {
@@ -719,11 +647,6 @@ public class StudioScreen extends Screen {
 
     @Override
     public boolean mouseScrolled(double x, double y, double scrollX, double scrollY) {
-        if (tab == Tab.ITEMS && x >= panelX() && y >= gridTop()) {
-            int rows = (found().size() + GRID_COLUMNS - 1) / GRID_COLUMNS;
-            scrolled = Mth.clamp(scrolled - (int) Math.signum(scrollY), 0, Math.max(0, rows - gridRows()));
-            return true;
-        }
         if (inView(x, y)) {
             zoom = Mth.clamp(zoom * (float) Math.pow(1.15, scrollY), 0.4F, 4.0F);
             return true;
@@ -733,13 +656,6 @@ public class StudioScreen extends Screen {
 
     @Override
     public boolean keyPressed(KeyEvent event) {
-        if (searchBox != null && searchBox.isFocused() && searchBox.visible) {
-            if (event.key() == 257 || event.key() == 335) { // enter: add the first match
-                if (!found().isEmpty()) addEntry(found().getFirst());
-                return true;
-            }
-            if (!event.isEscape()) return searchBox.keyPressed(event) || true;
-        }
         if (event.key() == 32) { // space: play / pause
             playing = !playing;
             stillDirty = true;
@@ -798,12 +714,8 @@ public class StudioScreen extends Screen {
 
         panel(graphics);
         super.extractRenderState(graphics, mouseX, mouseY, a);
-        int entry = gridUnder(mouseX, mouseY), icon = iconUnder(mouseX, mouseY);
-        if (entry >= 0) {
-            graphics.setTooltipForNextFrame(font, List.of(entryName(found().get(entry)),
-                    Component.literal(spot == null ? "Pick a spot in Anchors first" : "Click: add it").withStyle(net.minecraft.ChatFormatting.DARK_GRAY)),
-                    java.util.Optional.empty(), mouseX, mouseY);
-        } else if (icon >= 0 && spot != null && marks.get(spot) != null) {
+        int icon = iconUnder(mouseX, mouseY);
+        if (icon >= 0 && spot != null && marks.get(spot) != null) {
             graphics.setTooltipForNextFrame(font, List.of(entryName(marks.get(spot).items().get(icon)),
                     Component.literal("Click: remove it").withStyle(net.minecraft.ChatFormatting.DARK_GRAY)), java.util.Optional.empty(), mouseX, mouseY);
         }
@@ -864,37 +776,6 @@ public class StudioScreen extends Screen {
             y += 14;
             help = List.of("Drag: turn, wheel: zoom", "Click: choose a block", "Shift+click: add one", "Ctrl+click: all alike",
                     "Greyed: it can't do that", "Space: play / pause");
-        } else if (tab == Tab.ITEMS) {
-            StudioMark mark = spot == null ? null : marks.get(spot);
-            int listTop = itemsY();
-            if (spot == null) {
-                graphics.text(font, "Pick a spot in Anchors", tx, TOP + 46, WARN, false);
-            } else if (mark != null && mark.kind() != StudioMark.Kind.ITEM) {
-                graphics.text(font, "That anchor isn't an item", tx, TOP + 46, WARN, false);
-            } else {
-                graphics.text(font, mark == null ? "Click: a new item anchor" : "In turn through the work:", tx, TOP + 46, FAINT, false);
-                if (mark != null) itemList(graphics, mark, tx, listTop);
-            }
-            // The grid
-            List<String> entries = found();
-            int gridTop = gridTop(), rows = gridRows();
-            graphics.fill(px + 2, gridTop - 3, px + PANEL_WIDE - 2, gridTop - 2, EDGE);
-            for (int row = 0; row < rows; row++) {
-                for (int column = 0; column < GRID_COLUMNS; column++) {
-                    int index = (scrolled + row) * GRID_COLUMNS + column;
-                    if (index >= entries.size()) break;
-                    drawEntry(graphics, entries.get(index), tx + column * CELL + 1, gridTop + row * CELL + 1);
-                }
-            }
-            int allRows = (entries.size() + GRID_COLUMNS - 1) / GRID_COLUMNS;
-            if (allRows > rows) { // where the grid is scrolled to
-                int track = rows * CELL, bar = Math.max(8, track * rows / allRows);
-                int at = (track - bar) * scrolled / Math.max(1, allRows - rows);
-                graphics.fill(px + PANEL_WIDE - 4, gridTop, px + PANEL_WIDE - 2, gridTop + track, EDGE);
-                graphics.fill(px + PANEL_WIDE - 4, gridTop + at, px + PANEL_WIDE - 2, gridTop + at + bar, ACCENT);
-            }
-            if (entries.isEmpty()) graphics.text(font, "Nothing matches", tx, gridTop + 4, FAINT, false);
-            return;
         } else {
             StudioMark mark = spot == null ? null : marks.get(spot);
             if (spot == null) {
@@ -914,11 +795,11 @@ public class StudioScreen extends Screen {
             String when = mark == null ? "When in the work:" : mark.times().shownAlways() ? "Shows all the time"
                     : "Shows " + mark.times().showFrom() + "% to " + mark.times().showUntil() + "%";
             graphics.text(font, when, tx, y, mark == null ? FAINT : TEXT, false);
-            y = LIST_TOP + 6 * ROW + 14;
+            y = LIST_TOP + 7 * ROW + 18;
             if (mark != null && mark.kind() == StudioMark.Kind.ITEM) {
                 int top = itemsY();
                 y = itemList(graphics, mark, tx, top);
-                if (mark.items().isEmpty()) graphics.text(font, "Add items in the Items tab", tx, y, FAINT, false);
+                if (mark.items().isEmpty()) graphics.text(font, "Floats the input", tx, y, FAINT, false);
                 y += 12;
                 if (mark.to().isPresent()) {
                     graphics.text(font, "Travels " + mark.times().leave() + "% to " + mark.times().arrive() + "%", tx, y, TEXT, false);

@@ -40,10 +40,23 @@ public enum Motion implements StringRepresentable {
             frame(2, 0, new Vec3(-0.03, 0.02, 0.04), 0), frame(3, 0, new Vec3(0.03, 0, 0.02), 0), frame(4, 0, Vec3.ZERO, 0))),
     /** Lights up (furnaces, smokers, campfires, candles, redstone lamps: anything that can be lit). */
     LIGHT("light", "up", List.of()),
-    /** Fills up as the work goes on (cauldrons with water, composters, respawn anchors). */
+    /**
+     * Fills up as the work goes on: a cauldron with water, and any block (modded ones too) whose fill is a number
+     * in its state: composters, beehives, respawn anchors, snow layers, candles, sea pickles...
+     */
     FILL("fill", "up", List.of()),
+    /** A cauldron fills with lava. */
+    FILL_LAVA("fill_lava", "up", List.of()),
+    /** A cauldron fills with powder snow. */
+    FILL_SNOW("fill_snow", "up", List.of()),
+    /** Grows as the work goes on: crops, saplings' stages, anything with an "age" (modded crops too). */
+    GROW("grow", "up", List.of()),
     /** Opens (barrels, trapdoors, doors, fence gates). */
     OPEN("open", "up", List.of());
+
+    /** The state numbers that say how full a block is, by name (vanilla's and most mods'). */
+    private static final List<String> FILL_PROPERTIES = List.of("level", "honey_level", "charges", "layers", "pickles", "candles",
+            "eggs", "flower_amount", "segment_amount");
 
     /** A piston's strike: the head shoots out, stays a moment, and comes back (see ANIMATIONS.md, block_move). */
     private static final List<Keyframe> PISTON = List.of(
@@ -86,7 +99,7 @@ public enum Motion implements StringRepresentable {
         return switch (this) {
             case LIGHT -> look.hasProperty(BlockStateProperties.LIT);
             case OPEN -> look.hasProperty(BlockStateProperties.OPEN);
-            case FILL -> !fillSteps(look).isEmpty();
+            case FILL, FILL_LAVA, FILL_SNOW, GROW -> !steps(look).isEmpty();
             default -> true;
         };
     }
@@ -105,16 +118,34 @@ public enum Motion implements StringRepresentable {
             case LIGHT -> fits(look) ? List.of(Map.of("lit", "true")) : List.of();
             case OPEN -> fits(look) ? List.of(Map.of("open", "true")) : List.of();
             case FILL -> fillSteps(look);
+            case FILL_LAVA -> isCauldron(look) ? List.of(Map.of("block", "minecraft:lava_cauldron")) : List.of();
+            case FILL_SNOW -> isCauldron(look) ? levels(Blocks.POWDER_SNOW_CAULDRON, "level", 1, 3) : List.of();
+            case GROW -> numberSteps(look, "age");
             default -> List.of();
         };
     }
 
+    private static boolean isCauldron(BlockState look) {
+        return look.is(Blocks.CAULDRON) || look.is(Blocks.WATER_CAULDRON) || look.is(Blocks.LAVA_CAULDRON) || look.is(Blocks.POWDER_SNOW_CAULDRON);
+    }
+
     private static List<Map<String, String>> fillSteps(BlockState look) {
-        if (look.is(Blocks.CAULDRON) || look.is(Blocks.WATER_CAULDRON)) return levels(Blocks.WATER_CAULDRON, "level", 1, 3);
-        if (look.is(Blocks.POWDER_SNOW_CAULDRON)) return levels(Blocks.POWDER_SNOW_CAULDRON, "level", 1, 3);
-        if (look.is(Blocks.COMPOSTER)) return levels(Blocks.COMPOSTER, "level", 1, 8);
-        if (look.is(Blocks.RESPAWN_ANCHOR)) return levels(Blocks.RESPAWN_ANCHOR, "charge", 1, 4);
+        if (look.is(Blocks.CAULDRON) || look.is(Blocks.LAVA_CAULDRON)) return levels(Blocks.WATER_CAULDRON, "level", 1, 3);
+        for (String name : FILL_PROPERTIES) {
+            List<Map<String, String>> steps = numberSteps(look, name);
+            if (!steps.isEmpty()) return steps;
+        }
         return List.of();
+    }
+
+    /** Each value of a number in the block's state after its lowest, in order (its fill, its age), or none. */
+    private static List<Map<String, String>> numberSteps(BlockState look, String name) {
+        if (!(look.getBlock().getStateDefinition().getProperty(name)
+                instanceof net.minecraft.world.level.block.state.properties.IntegerProperty number)) return List.of();
+        List<Integer> values = number.getPossibleValues().stream().sorted().toList();
+        List<Map<String, String>> steps = new java.util.ArrayList<>();
+        for (int i = 1; i < values.size(); i++) steps.add(Map.of(name, Integer.toString(values.get(i))));
+        return List.copyOf(steps);
     }
 
     private static List<Map<String, String>> levels(Block block, String property, int from, int to) {

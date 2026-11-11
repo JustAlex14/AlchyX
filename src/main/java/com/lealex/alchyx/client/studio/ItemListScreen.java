@@ -14,15 +14,15 @@ import java.util.List;
 import java.util.function.BiConsumer;
 
 /**
- * The item list of one item anchor (Machine Studio): each item on its own row, with when it shows (from / until, in
- * percent of the work, with a little bar of the work under it) and how it moves while it shows (spins, stays still,
- * bobs, or travels to the anchor's other spot through its time). Items can overlap in time (two at once), be moved
- * up and down, taken out, or added from the item menu. Done keeps the list, Cancel leaves it as it was.
+ * The item list of one item anchor (Machine Studio): each item on its own row, with how it moves while it shows
+ * (spins, stays still, bobs, or travels to the anchor's other spot through its time) and a little bar of when it
+ * shows (set on the studio's timeline). Items can be moved up and down, taken out, or added from the item menu.
+ * Done keeps the list, Cancel leaves it as it was.
  */
 public class ItemListScreen extends Screen {
     private static final int BACK = 0xE0101018, PANEL = 0xFF1A1A26, EDGE = 0xFF3C3550, ACCENT = 0xFFD9A7FF, TEXT = 0xFFE8E4F0,
             FAINT = 0xFF9A93AA, GOOD = 0xFF8BE39B;
-    private static final int WIDE = 336, ROW = 30, TOP = 36, STEP = 5;
+    private static final int WIDE = 336, ROW = 30, TOP = 36;
 
     private final Screen parent;
     private final boolean canTravel;
@@ -50,23 +50,7 @@ public class ItemListScreen extends Screen {
         int left = left();
         for (int row = 0; row < rowsShown() && scrolled + row < items.size(); row++) {
             int i = scrolled + row, y = TOP + row * ROW;
-            int x = left + 112;
-            // From: - value +
-            small("-", x, y, "Shows earlier", () -> shows.set(i, shows.get(i).withFrom(Math.max(0, shows.get(i).from() - STEP))));
-            small("+", x + 44, y, "Shows later", () -> {
-                ItemShow show = shows.get(i);
-                int from = Math.min(100, show.from() + STEP);
-                shows.set(i, new ItemShow(from, Math.max(from, show.until()), show.style()));
-            });
-            x += 64;
-            // Until: - value +
-            small("-", x, y, "Goes away earlier", () -> {
-                ItemShow show = shows.get(i);
-                int until = Math.max(0, show.until() - STEP);
-                shows.set(i, new ItemShow(Math.min(show.from(), until), until, show.style()));
-            });
-            small("+", x + 44, y, "Goes away later", () -> shows.set(i, shows.get(i).withUntil(Math.min(100, shows.get(i).until() + STEP))));
-            x += 66;
+            int x = left + 242;
             Style style = shows.get(i).style();
             Button styleButton = addRenderableWidget(Button.builder(Component.literal(styleName(style)), b -> {
                 shows.set(i, shows.get(i).withStyle(nextStyle(shows.get(i).style())));
@@ -183,9 +167,7 @@ public class ItemListScreen extends Screen {
     public void extractRenderState(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float a) {
         int left = left();
         graphics.text(font, "Items of this anchor", left, 8, ACCENT, false);
-        graphics.text(font, "Each shows from / until (% of the work), and moves its own way", left, 19, FAINT, false);
-        graphics.text(font, "From", left + 128, TOP - 10, FAINT, false);
-        graphics.text(font, "Until", left + 190, TOP - 10, FAINT, false);
+        graphics.text(font, "How each moves, and their order. Their times: drag them on the studio's timeline", left, 19, FAINT, false);
         if (items.isEmpty()) graphics.text(font, "No items: it floats the input. Add item... to start", left, TOP + 6, FAINT, false);
         for (int row = 0; row < rowsShown() && scrolled + row < items.size(); row++) {
             int i = scrolled + row, y = TOP + row * ROW;
@@ -195,11 +177,8 @@ public class ItemListScreen extends Screen {
             ItemPickerScreen.drawEntry(graphics, font, entry, left, y + 1);
             String name = ItemPickerScreen.entryName(entry).getString();
             if (!entry.contains(":")) name = entry; // a display: its short name
-            while (font.width(name) > 86 && name.length() > 1) name = name.substring(0, name.length() - 1);
+            while (font.width(name) > 210 && name.length() > 1) name = name.substring(0, name.length() - 1);
             graphics.text(font, name, left + 20, y + 5, TEXT, false);
-            String from = show.from() + "%", until = show.until() + "%";
-            graphics.text(font, from, left + 112 + 29 - font.width(from) / 2, y + 5, TEXT, false);
-            graphics.text(font, until, left + 176 + 29 - font.width(until) / 2, y + 5, TEXT, false);
             // Its time in the work
             int barLeft = left + 20, barRight = left + WIDE - 4, span = barRight - barLeft;
             graphics.fill(barLeft, y + 21, barRight, y + 23, EDGE);

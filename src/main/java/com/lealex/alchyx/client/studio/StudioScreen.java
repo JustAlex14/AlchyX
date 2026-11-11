@@ -566,7 +566,7 @@ public class StudioScreen extends Screen {
         ItemPickerScreen.drawEntry(graphics, font, entry, x, y);
     }
 
-    private static final int ITEM_ROW = 28; // an icon and its time under it
+    private static final int ITEM_ROW = 18;
 
     /** Where the item list's icons start, and how many go in a row. */
     private int itemsY() { return LIST_TOP + 7 * ROW + 18; }
@@ -674,8 +674,122 @@ public class StudioScreen extends Screen {
         return ((clock + (playing ? partialTicks : 0)) % OPERATION) / OPERATION;
     }
 
+    // ---- The timeline: over the work bar, a track for each thing timed (the chosen blocks' motion; the chosen
+    // anchor, and each of its items), a bar from where it starts to where it ends. Drag a bar's ends (or the whole
+    // bar) along the work; they snap to the player (the work bar's head) and to the other keyframes ----
+
+    private static final int TRACK = 11, SNAP = 4;
+
+    /** One timed thing: its name, its start and end (percent of the work), its color, and how to change them. */
+    private record Track(String name, int from, int until, int color, java.util.function.BiConsumer<Integer, Integer> set) {}
+
+    private List<Track> tracks() {
+        List<Track> tracks = new ArrayList<>();
+        if (tab == Tab.BLOCKS) {
+            if (chosen.isEmpty() || !edits.keySet().containsAll(chosen)) return tracks;
+            BlockPos first = chosen.iterator().next();
+            MotionSetup setup = setups.getOrDefault(first, MotionSetup.ALWAYS);
+            List<BlockPos> cells = new ArrayList<>(chosen);
+            tracks.add(new Track(chosen.size() == 1 ? label(edits.get(first)) : chosen.size() + " blocks", setup.from(), setup.until(), ACCENT,
+                    (from, until) -> {
+                        for (BlockPos cell : cells) putSetup(cell, setups.getOrDefault(cell, MotionSetup.ALWAYS).withTimes(from, until));
+                        stillDirty = true;
+                    }));
+            return tracks;
+        }
+        BlockPos at = spot;
+        StudioMark mark = at == null ? null : marks.get(at);
+        if (mark == null) return tracks;
+        StudioMark.Times t = mark.times();
+        tracks.add(new Track(capital(mark.kind().getSerializedName()), t.showFrom(), t.showUntil(), GOOD,
+                (from, until) -> marks.computeIfPresent(at, (cell, m) -> m.withTimes(new StudioMark.Times(from, until, m.times().leave(), m.times().arrive())))));
+        if (mark.kind() == StudioMark.Kind.ITEM && mark.items().isEmpty() && mark.to().isPresent()) {
+            tracks.add(new Track("Travels", t.leave(), t.arrive(), TRAVEL_COLOR,
+                    (from, until) -> marks.computeIfPresent(at, (cell, m) -> m.withTimes(new StudioMark.Times(m.times().showFrom(), m.times().showUntil(), from, until)))));
+        }
+        for (int i = 0; i < mark.items().size(); i++) {
+            int index = i;
+            StudioMark.ItemShow show = mark.show(i);
+            tracks.add(new Track(entryName(mark.items().get(i)).getString(), show.from(), show.until(),
+                    show.style() == StudioMark.Style.TRAVEL ? TRAVEL_COLOR : ITEM_COLOR,
+                    (from, until) -> marks.computeIfPresent(at, (cell, m) -> {
+                        List<StudioMark.ItemShow> shows = new ArrayList<>();
+                        for (int j = 0; j < m.items().size(); j++) shows.add(m.show(j));
+                        if (index < shows.size()) shows.set(index, new StudioMark.ItemShow(from, until, shows.get(index).style()));
+                        return m.withItems(m.items(), shows);
+                    })));
+        }
+        int room = Math.max(1, (viewY1() - viewY0() - 80) / TRACK); // (the view must still show the machine)
+        return tracks.size() > room ? new ArrayList<>(tracks.subList(0, room)) : tracks;
+    }
+
+    private static final int TRAVEL_COLOR = 0xFF66B3FF, ITEM_COLOR = 0xFFFFB866;
+
+    private int barLeft() { return viewX0() + 4; }
+    private int barRight() { return viewX1() - 4; }
+    private int trackTop(int count) { return viewY1() - 12 - count * TRACK; }
+    private int xOf(int percent) { return barLeft() + Math.round((barRight() - barLeft()) * percent / 100.0F); }
+    private int percentAt(double x) { return Mth.clamp((int) Math.round((x - barLeft()) * 100.0 / (barRight() - barLeft())), 0, 100); }
+
+    /** The track under the mouse (its index), or -1. */
+    private int trackUnder(List<Track> tracks, double x, double y) {
+        int top = trackTop(tracks.size());
+        if (x < barLeft() - 3 || x > barRight() + 3 || y < top || y >= top + tracks.size() * TRACK) return -1;
+        return (int) ((y - top) / TRACK);
+    }
+
+    /** Where a keyframe dragged to {@code percent} lands: on the player or another keyframe if it is that close. */
+    private int snapped(int percent, List<Track> tracks, int skip) {
+        List<Integer> marksAt = new ArrayList<>(List.of(0, 100, Math.round(progress(0) * 100)));
+        for (int i = 0; i < tracks.size(); i++) {
+            if (i == skip) continue;
+            marksAt.add(tracks.get(i).from());
+            marksAt.add(tracks.get(i).until());
+        }
+        int best = percent, bestGap = SNAP + 1;
+        for (int mark : marksAt) {
+            int gap = Math.abs(xOf(mark) - xOf(percent));
+            if (gap < bestGap) {
+                best = mark;
+                bestGap = gap;
+            }
+        }
+        return best;
+    }
+
+    private int draggedTrack = -1, draggedPart;  // which track is held, and by what: 0 its start, 1 its end, 2 the whole bar
+    private int grabbedAt;                       // where the whole bar was grabbed (percent of the work)
+
+    /** The preview's time for a point of the work: the pretend operation lasts OPERATION ticks. */
+    private static String seconds(int percent) {
+        return String.format(Locale.ROOT, "%.1fs", percent * OPERATION / 100.0F / 20.0F);
+    }
+
     @Override
     public boolean mouseClicked(MouseButtonEvent event, boolean doubleClick) {
+        if (event.button() == 0) {
+            List<Track> tracks = tracks();
+            int held = trackUnder(tracks, event.x(), event.y());
+            if (held >= 0) {
+                Track track = tracks.get(held);
+                int x = (int) event.x(), start = xOf(track.from()), end = xOf(track.until());
+                if (Math.abs(x - start) <= 3 && Math.abs(x - start) <= Math.abs(x - end)) draggedPart = 0;
+                else if (Math.abs(x - end) <= 3) draggedPart = 1;
+                else if (x > start && x < end) draggedPart = 2;
+                else { // beside the bar: the player goes there
+                    scrubbing = true;
+                    if (playing) {
+                        playing = false;
+                        rebuildWidgets();
+                    }
+                    scrub(event.x());
+                    return true;
+                }
+                draggedTrack = held;
+                grabbedAt = percentAt(event.x());
+                return true;
+            }
+        }
         int icon = iconUnder(event.x(), event.y());
         if (icon >= 0 && event.button() == 0) { // the anchor's item list, to change them
             pickItems();
@@ -701,6 +815,30 @@ public class StudioScreen extends Screen {
 
     @Override
     public boolean mouseDragged(MouseButtonEvent event, double dx, double dy) {
+        if (draggedTrack >= 0) {
+            List<Track> tracks = tracks();
+            if (draggedTrack >= tracks.size()) {
+                draggedTrack = -1;
+                return true;
+            }
+            Track track = tracks.get(draggedTrack);
+            int at = snapped(percentAt(event.x()), tracks, draggedTrack);
+            switch (draggedPart) {
+                case 0 -> track.set().accept(Math.min(at, track.until()), track.until());
+                case 1 -> track.set().accept(track.from(), Math.max(at, track.from()));
+                default -> {
+                    int length = track.until() - track.from();
+                    int from = Mth.clamp(track.from() + percentAt(event.x()) - grabbedAt, 0, 100 - length);
+                    int start = snapped(from, tracks, draggedTrack), end = snapped(from + length, tracks, draggedTrack);
+                    if (start != from) from = start; // (the start snaps first, else the end)
+                    else if (end != from + length) from = Mth.clamp(end - length, 0, 100 - length);
+                    grabbedAt += from - track.from();
+                    track.set().accept(from, from + length);
+                }
+            }
+            refreshButtons();
+            return true;
+        }
         if (scrubbing) {
             scrub(event.x());
             return true;
@@ -716,6 +854,11 @@ public class StudioScreen extends Screen {
 
     @Override
     public boolean mouseReleased(MouseButtonEvent event) {
+        if (draggedTrack >= 0 && event.button() == 0) {
+            draggedTrack = -1;
+            refreshButtons();
+            return true;
+        }
         if (scrubbing && event.button() == 0) {
             scrubbing = false;
             return true;
@@ -829,22 +972,35 @@ public class StudioScreen extends Screen {
         graphics.text(font, top == size.getY() - 1 ? "All layers" : "Layers 1-" + (top + 1), MARGIN + 74, height - BAR + 11, TEXT, false);
         if (hovered != null) {
             String says = describe(hovered.cell());
-            if (says != null) graphics.text(font, says, x0 + 4, y1 - 22, TEXT, true);
+            if (says != null) graphics.text(font, says, x0 + 4, y0 + 16, TEXT, true);
         }
         int barLeft = x0 + 4, barRight = x1 - 4, filled = barLeft + Math.round((barRight - barLeft) * progress(a));
         graphics.fill(barLeft, y1 - 6, barRight, y1 - 3, EDGE);
         graphics.fill(barLeft, y1 - 6, filled, y1 - 3, ACCENT);
         graphics.fill(filled - 1, y1 - 8, filled + 1, y1 - 1, TEXT);
-        StudioMark picked = tab != Tab.BLOCKS && spot != null ? marks.get(spot) : null;
-        if (picked != null) { // the chosen anchor's times over the bar: when it shows (green), when it travels (blue)
-            int span = barRight - barLeft;
-            graphics.fill(barLeft + span * picked.times().showFrom() / 100, y1 - 9, barLeft + span * picked.times().showUntil() / 100, y1 - 7, GOOD);
-            if (picked.to().isPresent()) {
-                graphics.fill(barLeft + span * picked.times().leave() / 100, y1 - 3, barLeft + span * picked.times().arrive() / 100, y1 - 1, 0xFF66B3FF);
-            }
+        // The timeline: a track per timed thing, with the player's line through them
+        List<Track> tracks = tracks();
+        int tracksTop = trackTop(tracks.size());
+        if (!tracks.isEmpty()) graphics.fill(x0 + 1, tracksTop - 2, x1 - 1, y1 - 10, 0xC0101018);
+        int hoveredTrack = trackUnder(tracks, mouseX, mouseY);
+        for (int i = 0; i < tracks.size(); i++) {
+            Track track = tracks.get(i);
+            int ty = tracksTop + i * TRACK, start = xOf(track.from()), end = Math.max(xOf(track.until()), start + 2);
+            graphics.fill(barLeft, ty + 4, barRight, ty + 5, EDGE);
+            graphics.fill(start, ty + 1, end, ty + TRACK - 2, (track.color() & 0x00FFFFFF) | (i == draggedTrack || i == hoveredTrack ? 0xFF000000 : 0xB0000000));
+            graphics.fill(start, ty, start + 2, ty + TRACK - 1, TEXT); // its keyframes: where it starts and ends
+            graphics.fill(end - 2, ty, end, ty + TRACK - 1, TEXT);
+            String called = track.name();
+            int room = end - start - 6;
+            while (!called.isEmpty() && font.width(called) > room) called = called.substring(0, called.length() - 1);
+            if (!called.isEmpty()) graphics.text(font, called, start + 4, ty + 2, 0xFF101018, false);
         }
-        String work = "Work " + Math.round(progress(a) * 100) + "%";
-        graphics.text(font, work, barRight - font.width(work), y1 - 18, FAINT, false);
+        graphics.fill(filled - 1, tracks.isEmpty() ? y1 - 8 : tracksTop - 2, filled + 1, y1 - 1, TEXT); // the player
+        String work = seconds(Math.round(progress(a) * 100)) + " / " + seconds(100);
+        graphics.text(font, work, barRight - font.width(work), (tracks.isEmpty() ? y1 : tracksTop) - 12, FAINT, false);
+        if (!tracks.isEmpty() && hoveredTrack < 0 && draggedTrack < 0 && inView(mouseX, mouseY) && mouseY >= tracksTop - 14) {
+            graphics.text(font, "Drag a bar or its ends along the work", x0 + 4, tracksTop - 12, FAINT, false);
+        }
         if (pickingTo) graphics.text(font, "Click the spot the item travels to", x0 + 4, y0 + 4, WARN, true);
 
         panel(graphics);
@@ -853,9 +1009,19 @@ public class StudioScreen extends Screen {
         if (icon >= 0 && spot != null && marks.get(spot) != null) {
             StudioMark.ItemShow show = marks.get(spot).show(icon);
             graphics.setTooltipForNextFrame(font, List.of(entryName(marks.get(spot).items().get(icon)),
-                    Component.literal(show.from() + "% to " + show.until() + "% of the work, " + show.style().getSerializedName())
+                    Component.literal(capital(show.style().getSerializedName()) + ", " + seconds(show.from()) + " to " + seconds(show.until()))
                             .withStyle(net.minecraft.ChatFormatting.GRAY),
                     Component.literal("Click: the item list").withStyle(net.minecraft.ChatFormatting.DARK_GRAY)), java.util.Optional.empty(), mouseX, mouseY);
+        } else if (hoveredTrack >= 0 && draggedTrack < 0) {
+            Track track = tracks.get(hoveredTrack);
+            graphics.setTooltipForNextFrame(font, List.of(Component.literal(track.name()),
+                    Component.literal(seconds(track.from()) + " to " + seconds(track.until())).withStyle(net.minecraft.ChatFormatting.GRAY),
+                    Component.literal("Drag its ends or the bar; they snap to the player").withStyle(net.minecraft.ChatFormatting.DARK_GRAY)),
+                    java.util.Optional.empty(), mouseX, mouseY);
+        } else if (draggedTrack >= 0 && draggedTrack < tracks.size()) {
+            Track track = tracks.get(draggedTrack);
+            graphics.setTooltipForNextFrame(font, List.of(Component.literal(seconds(track.from()) + " to " + seconds(track.until()))),
+                    java.util.Optional.empty(), mouseX, mouseY);
         }
     }
 
@@ -908,7 +1074,7 @@ public class StudioScreen extends Screen {
                 BlockPos cell = chosen.iterator().next();
                 MotionSetup setup = setups.getOrDefault(cell, MotionSetup.ALWAYS);
                 if (edits.containsKey(cell)) {
-                    graphics.text(font, setup.always() ? "All along the work" : "From " + setup.from() + "% to " + setup.until() + "%", tx, y, TEXT, false);
+                    graphics.text(font, setup.always() ? "All along the work" : seconds(setup.from()) + " to " + seconds(setup.until()), tx, y, TEXT, false);
                     y += 11;
                 }
                 for (Map.Entry<String, String> entry : setup.state().entrySet()) {
@@ -943,7 +1109,7 @@ public class StudioScreen extends Screen {
             }
             y = LIST_TOP + 3 * ROW + 3;
             String when = mark == null ? "When in the work:" : mark.times().shownAlways() ? "Shows all the time"
-                    : "Shows " + mark.times().showFrom() + "% to " + mark.times().showUntil() + "%";
+                    : "Shows " + seconds(mark.times().showFrom()) + " to " + seconds(mark.times().showUntil());
             graphics.text(font, when, tx, y, mark == null ? FAINT : TEXT, false);
             y = LIST_TOP + 7 * ROW + 18;
             if (mark != null && mark.kind() == StudioMark.Kind.ITEM) {
@@ -952,12 +1118,12 @@ public class StudioScreen extends Screen {
                 if (mark.items().isEmpty()) graphics.text(font, "Floats the input", tx, y, FAINT, false);
                 y += 12;
                 if (mark.to().isPresent()) {
-                    graphics.text(font, "Travels " + mark.times().leave() + "% to " + mark.times().arrive() + "%", tx, y, TEXT, false);
+                    graphics.text(font, "Travels " + seconds(mark.times().leave()) + " to " + seconds(mark.times().arrive()), tx, y, TEXT, false);
                     y += 12;
                 }
                 if (!mark.items().isEmpty()) {
-                    graphics.text(font, "Lit: showing now. Under:", tx, y, FAINT, false);
-                    graphics.text(font, "the % it comes. Click", tx, y + 10, FAINT, false);
+                    graphics.text(font, "Lit: showing now. Their", tx, y, FAINT, false);
+                    graphics.text(font, "times: the timeline. Click", tx, y + 10, FAINT, false);
                     graphics.text(font, "one: the item list", tx, y + 20, FAINT, false);
                     y += 32;
                 }
@@ -979,8 +1145,6 @@ public class StudioScreen extends Screen {
             int ix = x + (i % ICONS_PER_ROW) * 18, iy = top + (i / ICONS_PER_ROW) * ITEM_ROW;
             graphics.fill(ix - 1, iy - 1, ix + 17, iy + 17, now.contains(i) ? ACCENT : EDGE);
             drawEntry(graphics, mark.items().get(i), ix, iy);
-            String at = Integer.toString(mark.show(i).from());
-            graphics.text(font, at, ix + 8 - font.width(at) / 2, iy + 18, now.contains(i) ? TEXT : FAINT, false);
         }
         return top + (mark.items().isEmpty() ? 0 : ((mark.items().size() + ICONS_PER_ROW - 1) / ICONS_PER_ROW) * ITEM_ROW + 2);
     }

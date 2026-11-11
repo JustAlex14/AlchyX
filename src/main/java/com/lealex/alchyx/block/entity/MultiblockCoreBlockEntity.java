@@ -479,6 +479,31 @@ public abstract class MultiblockCoreBlockEntity extends BlockEntity {
         return next;
     }
 
+    /**
+     * Replaces all the motions at once (the Machine Studio's save), keeping only those this machine allows and only
+     * on its formed parts. Returns how many were kept, or -1 if this isn't a formed free-build machine.
+     * Server side.
+     */
+    public int setMotions(Map<BlockPos, com.lealex.alchyx.animation.Motion> wanted) {
+        com.lealex.alchyx.multiblock.FreeBuild rules = freeBuild();
+        if (level == null || level.isClientSide() || rules == null || recordedShape == null || !formed) return -1;
+        Map<BlockPos, com.lealex.alchyx.animation.Motion> kept = new java.util.LinkedHashMap<>();
+        for (Map.Entry<BlockPos, com.lealex.alchyx.animation.Motion> entry : wanted.entrySet()) {
+            if (entry.getValue() == null || !rules.motions().contains(entry.getValue())) continue;
+            BlockPos pos = worldPosition.offset(entry.getKey());
+            if (!ShellParts.isPart(level.getBlockState(pos)) || !structureContains(pos)) continue;
+            kept.put(entry.getKey().immutable(), entry.getValue());
+        }
+        if (!kept.equals(motions)) {
+            motions.clear();
+            motions.putAll(kept);
+            motionsVersion++;
+            setChanged();
+            syncToClients();
+        }
+        return kept.size();
+    }
+
     private void setRecordedShape(@Nullable MultiblockPattern shape) {
         recordedShape = shape;
         occupied = null;

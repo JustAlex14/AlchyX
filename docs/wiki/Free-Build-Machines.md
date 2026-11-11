@@ -25,6 +25,17 @@ Once the machine stands, use the Recorder on any of its blocks to make that bloc
 
 Sneak + use on a block stops it at once. Some machines allow only some motions, or none.
 
+### The Machine Studio
+
+Once the machine stands, use the Recorder on its **core** with no corners marked: the Machine Studio opens. It shows the machine in 3D, like a page of a guide book, but you can change it:
+
+- **Drag** to turn the view, use the **wheel** to zoom, and use the **- / +** layer buttons to hide the top layers and look inside.
+- **Click** a block to choose it. **Shift + click** adds or removes one block. **Ctrl + click** chooses every block of that kind.
+- Pick a **motion** on the right. **Play / Pause** (or Space) previews the motions in the view, before anything changes in the world.
+- **Save** sends the motions to the machine. **Close** leaves without saving.
+
+The machine must stay formed and within 16 blocks while the screen is open. Only motions the machine allows are offered, and the server checks them again on save.
+
 - **Sneak + use the Recorder on the core**: forget its shape, to rebuild it differently. A formed machine breaks first.
 - **Sneak + use the Recorder in the air**: forget the corners.
 - Chests, barrels and other blocks that hold things stay real blocks, so they keep what is in them. So do liquids.

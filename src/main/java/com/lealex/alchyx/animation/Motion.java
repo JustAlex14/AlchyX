@@ -43,6 +43,16 @@ public enum Motion implements StringRepresentable {
         return new Keyframe(t, move, offset, new Vec3(0, yDegrees, 0), 1.0F, Map.of());
     }
 
+    /** The motion's keyframes, one loop. */
+    public List<Keyframe> keyframes() {
+        return keyframes;
+    }
+
+    /** The way it moves along: "up", or "facing" (the block's facing). */
+    public String direction() {
+        return direction;
+    }
+
     @Override
     public String getSerializedName() {
         return id;

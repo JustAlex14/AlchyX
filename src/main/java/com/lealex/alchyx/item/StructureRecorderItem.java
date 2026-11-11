@@ -3,6 +3,7 @@ package com.lealex.alchyx.item;
 import com.lealex.alchyx.animation.Motion;
 import com.lealex.alchyx.block.entity.MultiblockCoreBlockEntity;
 import com.lealex.alchyx.multiblock.FreeBuild;
+import com.lealex.alchyx.multiblock.MachineStudio;
 import net.minecraft.ChatFormatting;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
@@ -31,7 +32,9 @@ import java.util.function.Consumer;
  *       records the build as its shape and forms. Otherwise it says what is wrong (too big, a block it refuses,
  *       what is still missing).</li>
  * </ol>
- * Once the machine stands, use it on one of its blocks to pick how that block moves (animation/Motion: spin, bob,
+ * Once the machine stands, use it on its core (no corners marked) to open the Machine Studio: the machine in 3D,
+ * where each block's motion is picked and previewed, then saved at once (client/studio/StudioScreen).
+ * Or use it on one of its blocks to pick how that block moves (animation/Motion: spin, bob,
  * strike, swing, shake, in turn, then still again; sneak + use stops it at once), among the motions the machine allows.
  * Sneak + use on a core forgets its shape (a formed machine breaks, its parts turn back into their blocks). Sneak +
  * use in the air forgets the corners. Used on a core with no corners marked, it tells that machine's rules.
@@ -57,10 +60,16 @@ public class StructureRecorderItem extends Item implements MachineTool {
     public InteractionResult useOn(UseOnContext context) {
         Level level = context.getLevel();
         Player player = context.getPlayer();
-        if (level.isClientSide()) return InteractionResult.SUCCESS; // the server decides; just swing the arm
         if (player == null) return InteractionResult.FAIL;
         ItemStack stack = context.getItemInHand();
         BlockPos pos = context.getClickedPos();
+        boolean studio = !player.isShiftKeyDown() && first(stack) == null
+                && level.getBlockEntity(pos) instanceof MultiblockCoreBlockEntity core && MachineStudio.opens(core);
+        if (level.isClientSide()) {
+            if (studio) MachineStudio.clientOpen.accept(pos.immutable()); // the Machine Studio
+            return InteractionResult.SUCCESS; // otherwise the server decides; just swing the arm
+        }
+        if (studio) return InteractionResult.SUCCESS; // the client opened the studio
 
         if (level.getBlockEntity(pos) instanceof MultiblockCoreBlockEntity core) {
             useOnCore(level, player, stack, core);
@@ -172,6 +181,7 @@ public class StructureRecorderItem extends Item implements MachineTool {
         }
         tooltip.accept(Component.literal("Use on two blocks: the corners of your build").withStyle(ChatFormatting.GRAY));
         tooltip.accept(Component.literal("Use on the machine's core: record the build").withStyle(ChatFormatting.GRAY));
+        tooltip.accept(Component.literal("Use on a formed machine's core: open the Machine Studio").withStyle(ChatFormatting.GRAY));
         tooltip.accept(Component.literal("Use on a block of a formed machine: pick how it moves").withStyle(ChatFormatting.GRAY));
         tooltip.accept(Component.literal("Sneak + use on the core: forget its shape").withStyle(ChatFormatting.DARK_GRAY));
         tooltip.accept(Component.literal("Sneak + use in the air: forget the corners").withStyle(ChatFormatting.DARK_GRAY));

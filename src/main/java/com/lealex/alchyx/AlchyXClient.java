@@ -45,6 +45,8 @@ public class AlchyXClient {
         com.lealex.alchyx.growth.GrowthPayload.clientReceive = com.lealex.alchyx.client.growth.GrowthParts::receive;
         net.neoforged.neoforge.common.NeoForge.EVENT_BUS.addListener(com.lealex.alchyx.client.growth.GrowthParts::onClientTick);
         net.neoforged.neoforge.common.NeoForge.EVENT_BUS.addListener(com.lealex.alchyx.client.RecorderOutline::onClientTick);
+        // The Machine Studio: a free-build machine in 3D, its motions picked and previewed (client/studio)
+        com.lealex.alchyx.multiblock.MachineStudio.clientOpen = com.lealex.alchyx.client.studio.StudioScreen::open;
         net.neoforged.neoforge.common.NeoForge.EVENT_BUS.addListener(com.lealex.alchyx.client.growth.GrowthParts::onExtract);
         net.neoforged.neoforge.common.NeoForge.EVENT_BUS.addListener(com.lealex.alchyx.client.growth.GrowthParts::onSubmit);
         net.neoforged.neoforge.common.NeoForge.EVENT_BUS.addListener((net.neoforged.neoforge.event.entity.player.ItemTooltipEvent event) -> {
@@ -84,6 +86,12 @@ public class AlchyXClient {
     @SubscribeEvent
     static void registerScreens(RegisterMenuScreensEvent event) {
         event.register(AlchyXRegistries.MACHINE_MENU.get(), MachineScreen::new);
+    }
+
+    // The Machine Studio's 3D view, drawn into the screen like the inventory draws the player
+    @SubscribeEvent
+    static void registerPictureInPicture(net.neoforged.neoforge.client.event.RegisterPictureInPictureRenderersEvent event) {
+        event.register(com.lealex.alchyx.client.studio.StudioRenderState.class, com.lealex.alchyx.client.studio.StudioRenderer::new);
     }
 
     // Scenes: the fade over the screen, pictures over players' skins, the pose and overlay data on players' render states

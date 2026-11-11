@@ -64,6 +64,41 @@ public final class TrailerPlayer {
     private static double waited;
     /** The trailer's own music while it plays (the game's music is kept quiet meanwhile). */
     private static net.minecraft.client.resources.sounds.@Nullable SimpleSoundInstance music;
+    /** Ticks until the music is started again where the trailer is (a change of world stops every sound). */
+    private static int musicResume;
+
+    /** Plays the trailer's music from `seconds` in: the stream skips what was already heard. */
+    private static void startMusic(Minecraft minecraft, net.minecraft.resources.Identifier sound, double seconds) {
+        minecraft.getMusicManager().stopPlaying();
+        music = new net.minecraft.client.resources.sounds.SimpleSoundInstance(sound, net.minecraft.sounds.SoundSource.MUSIC,
+                1F, 1F, net.minecraft.util.RandomSource.create(), false, 0,
+                net.minecraft.client.resources.sounds.SoundInstance.Attenuation.NONE, 0, 0, 0, true) {
+            @Override
+            public java.util.concurrent.CompletableFuture<net.minecraft.client.sounds.AudioStream> getStream(
+                    net.minecraft.client.sounds.SoundBufferLibrary buffers, net.minecraft.client.resources.sounds.Sound played,
+                    boolean looping) {
+                java.util.concurrent.CompletableFuture<net.minecraft.client.sounds.AudioStream> stream =
+                        super.getStream(buffers, played, looping);
+                return seconds <= 0 ? stream : stream.thenApply(audio -> skip(audio, seconds));
+            }
+        };
+        minecraft.getSoundManager().play(music);
+    }
+
+    private static net.minecraft.client.sounds.AudioStream skip(net.minecraft.client.sounds.AudioStream audio, double seconds) {
+        javax.sound.sampled.AudioFormat format = audio.getFormat();
+        long left = (long) (seconds * format.getFrameRate()) * format.getFrameSize();
+        try {
+            while (left > 0) {
+                java.nio.ByteBuffer chunk = audio.read((int) Math.min(left, 65536));
+                if (chunk == null || !chunk.hasRemaining()) break;   // past the end: it simply plays nothing
+                left -= chunk.remaining();
+            }
+        } catch (java.io.IOException ignored) {
+            // a stream that cannot be read ahead plays from where it got to
+        }
+        return audio;
+    }
     private static float yaw, pitch, roll;
     private static float fov = Float.NaN;
     private static @Nullable LocalPlayer inputOwner;
@@ -98,14 +133,9 @@ public final class TrailerPlayer {
         reanchor = 0;
         lost = 0;
         home = minecraft.level.dimension();
-found.music().ifPresent(sound -> {
-            minecraft.getMusicManager().stopPlaying();
-            music = new net.minecraft.client.resources.sounds.SimpleSoundInstance(sound, net.minecraft.sounds.SoundSource.MUSIC,
-                    1F, 1F, net.minecraft.util.RandomSource.create(), false, 0,
-                    net.minecraft.client.resources.sounds.SoundInstance.Attenuation.NONE, 0, 0, 0, true);
-            minecraft.getSoundManager().play(music);
-        });
-                CameraShots.take(SHOT, CameraType.FIRST_PERSON, null);
+        musicResume = 0;
+        found.music().ifPresent(sound -> startMusic(minecraft, sound, 0));
+        CameraShots.take(SHOT, CameraType.FIRST_PERSON, null);
         CameraShots.watch(SHOT, marker);
         return true;
     }
@@ -240,9 +270,13 @@ found.music().ifPresent(sound -> {
             }
             camera = moved;
             reanchor = 15;
+            if (music != null) musicResume = 10; // the change of world stopped it: start it again once the world is in
         }
         if (!(minecraft.player.input instanceof StillInput)) minecraft.player.input = new StillInput();
         if (music != null) minecraft.getMusicManager().stopPlaying(); // no game music over the trailer's own
+        if (musicResume > 0 && --musicResume == 0 && music != null && !minecraft.getSoundManager().isActive(music)) {
+            startMusic(minecraft, music.getIdentifier(), time / 20.0);
+        }
         if (!CameraShots.active(SHOT)) CameraShots.take(SHOT, CameraType.FIRST_PERSON, null);
         if (minecraft.getCameraEntity() != camera && CameraShots.topIs(SHOT)) CameraShots.watch(SHOT, camera);
         if (reanchor > 0) {

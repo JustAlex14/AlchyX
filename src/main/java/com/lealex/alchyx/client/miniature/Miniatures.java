@@ -49,6 +49,8 @@ public final class Miniatures {
         for (Puppets.Prepared figure : figures) {
             poseStack.pushPose();
             poseStack.translate(figure.x(), figure.y(), figure.z());
+            if (figure.spin() != 0) poseStack.mulPose(Axis.YP.rotationDegrees(figure.spin()));
+            if (figure.scale() != 1.0F) poseStack.scale(figure.scale(), figure.scale(), figure.scale());
             Minecraft.getInstance().getEntityRenderDispatcher().submit(figure.state(), camera, 0, 0, 0, poseStack, collector);
             poseStack.popPose();
         }

@@ -262,8 +262,9 @@ public record FreeBuild(int maxWidth, int maxHeight, int minBlocks, List<BlockMa
                         key.put(String.valueOf(c), entry(Optional.of(state.getBlock()), kept, false, false));
                     }
                     row.append(c);
-                    // Blocks holding things (chests...) and liquids stay real: a part would lose what they hold
-                    boolean real = formed == Formed.KEEP || state.hasBlockEntity() || state.getBlock() instanceof LiquidBlock;
+                    // Blocks holding things (chests, tanks, batteries...) and liquids stay real: a part would lose what
+                    // they hold. Other blocks with data (a spawner, a banner, a sign...) become parts that keep it to show
+                    boolean real = formed == Formed.KEEP || holdsThings(level, pos, state) || state.getBlock() instanceof LiquidBlock;
                     resultRow.append(real ? '.' : 's');
                 }
                 rows.add(row.toString());
@@ -273,6 +274,15 @@ public record FreeBuild(int maxWidth, int maxHeight, int minBlocks, List<BlockMa
             result.add(resultRows);
         }
         return new MultiblockPattern(Optional.of(coreBlock), Optional.empty(), layers, key, Optional.of(result), resultKey, Map.of());
+    }
+
+    /** Whether the block holds items, fluid or energy (its own inventory, or what other mods can reach). */
+    private static boolean holdsThings(Level level, BlockPos pos, BlockState state) {
+        if (!state.hasBlockEntity()) return false;
+        if (level.getBlockEntity(pos) instanceof net.minecraft.world.Container) return true;
+        return level.getCapability(net.neoforged.neoforge.capabilities.Capabilities.Item.BLOCK, pos, null) != null
+                || level.getCapability(net.neoforged.neoforge.capabilities.Capabilities.Fluid.BLOCK, pos, null) != null
+                || level.getCapability(net.neoforged.neoforge.capabilities.Capabilities.Energy.BLOCK, pos, null) != null;
     }
 
     private static PatternKey entry(Optional<Block> block, Map<String, String> state, boolean core, boolean any) {

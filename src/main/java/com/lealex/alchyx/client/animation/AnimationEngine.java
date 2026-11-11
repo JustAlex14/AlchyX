@@ -185,7 +185,13 @@ public final class AnimationEngine {
                     fire = false;
                 }
             } else {
-                fire = timing.when() == Trigger.START ? started : finished;
+                if (timing.when() == Trigger.START && timing.windowed()) {
+                    // "start" with "between": once each operation, as it reaches its start (a keyframe of the work)
+                    fire = working && rt.counters[i] != opCount + 1 && timing.within(working, core.getAnimationProgress(now));
+                    if (fire) rt.counters[i] = opCount + 1;
+                } else {
+                    fire = timing.when() == Trigger.START ? started : finished;
+                }
             }
             if (!fire || !near) continue;
             if (!timing.levelsMet(core::getAnimationLevel)) continue; // "min_level"

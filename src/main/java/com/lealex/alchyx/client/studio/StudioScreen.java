@@ -73,6 +73,7 @@ public class StudioScreen extends Screen {
     private static final BlockState PARTICLE_MARK = Blocks.YELLOW_STAINED_GLASS.defaultBlockState();
     private static final BlockState SPOT_MARK = Blocks.LIGHT_BLUE_STAINED_GLASS.defaultBlockState();
     private static final BlockState AIR = Blocks.AIR.defaultBlockState();
+    private static final BlockState SOUND_MARK = Blocks.NOTE_BLOCK.defaultBlockState();
     private static final BlockState ITEM_MARK = Blocks.ORANGE_STAINED_GLASS.defaultBlockState();
     private static final BlockState PATH_MARK = Blocks.LIGHT_BLUE_STAINED_GLASS.defaultBlockState();
     private static final int OPERATION = 100; // the preview's pretend work: one operation this many ticks long
@@ -115,7 +116,7 @@ public class StudioScreen extends Screen {
     private final List<Button> motionButtons = new ArrayList<>();
     private final List<@Nullable Motion> motionChoices = new ArrayList<>();
     private final List<Button> anchorButtons = new ArrayList<>();
-    private @Nullable Button particlesButton, figureButton, itemButton, removeButton, previousButton, nextButton, turnButton;
+    private @Nullable Button particlesButton, figureButton, itemButton, soundButton, removeButton, previousButton, nextButton, turnButton;
     private @Nullable Button appearButton, vanishButton, leaveButton, arriveButton, alwaysButton, pickItemsButton;
     private final List<Button> blockButtons = new ArrayList<>(); // Blocks tab: when the chosen blocks' motion plays, a change's state
     private @Nullable Button startButton, stopButton, wholeButton, stateButton, dataButton;
@@ -240,13 +241,19 @@ public class StudioScreen extends Screen {
 
         // Anchors: what plays at the spot
         py = LIST_TOP;
-        particlesButton = addRenderableWidget(Button.builder(Component.literal("Particles"), b -> putMark(StudioMark.Kind.PARTICLES))
-                .bounds(px, py, third, 18).build());
-        figureButton = addRenderableWidget(Button.builder(Component.literal("Figure"), b -> putMark(StudioMark.Kind.FIGURE))
-                .bounds(px + third + 2, py, third, 18).build());
+        int quarter = (wide - 6) / 4;
+        particlesButton = addRenderableWidget(Button.builder(Component.literal("Fx"), b -> putMark(StudioMark.Kind.PARTICLES))
+                .bounds(px, py, quarter, 18).build());
+        particlesButton.setTooltip(Tooltip.create(Component.literal("Particles rise here: smoke, flames, glyphs...")));
+        figureButton = addRenderableWidget(Button.builder(Component.literal("Mob"), b -> putMark(StudioMark.Kind.FIGURE))
+                .bounds(px + quarter + 2, py, quarter, 18).build());
+        figureButton.setTooltip(Tooltip.create(Component.literal("A figure stands here: a villager, a golem, a cat...")));
         itemButton = addRenderableWidget(Button.builder(Component.literal("Item"), b -> putMark(StudioMark.Kind.ITEM))
-                .bounds(px + 2 * (third + 2), py, wide - 2 * (third + 2), 18).build());
-        itemButton.setTooltip(Tooltip.create(Component.literal("The item the machine works on floats here")));
+                .bounds(px + 2 * (quarter + 2), py, quarter, 18).build());
+        itemButton.setTooltip(Tooltip.create(Component.literal("Items float here: the machine's input, output, any item")));
+        soundButton = addRenderableWidget(Button.builder(Component.literal("Sound"), b -> putMark(StudioMark.Kind.SOUND))
+                .bounds(px + 3 * (quarter + 2), py, wide - 3 * (quarter + 2), 18).build());
+        soundButton.setTooltip(Tooltip.create(Component.literal("A sound plays here as the work reaches its start (the timeline)")));
         py += ROW;
         previousButton = addRenderableWidget(Button.builder(Component.literal("<"), b -> cycleMark(-1)).bounds(px, py, 18, 18).build());
         nextButton = addRenderableWidget(Button.builder(Component.literal(">"), b -> cycleMark(1)).bounds(px + wide - 18, py, 18, 18).build());
@@ -273,7 +280,7 @@ public class StudioScreen extends Screen {
         py += ROW;
         pickItemsButton = addRenderableWidget(Button.builder(Component.literal("Items..."), b -> pickItems()).bounds(px, py, wide, 18).build());
         pickItemsButton.setTooltip(Tooltip.create(Component.literal("Its items, each with its own time and way of moving: any item, modded ones too, or a display")));
-        anchorButtons.addAll(List.of(particlesButton, figureButton, itemButton, previousButton, nextButton, turnButton, removeButton,
+        anchorButtons.addAll(List.of(particlesButton, figureButton, itemButton, soundButton, previousButton, nextButton, turnButton, removeButton,
                 appearButton, vanishButton, leaveButton, arriveButton, alwaysButton, pickItemsButton));
         refreshButtons();
     }
@@ -363,15 +370,25 @@ public class StudioScreen extends Screen {
                 && (mark == null || mark.kind() != StudioMark.Kind.FIGURE) && (mark != null || marks.size() < StudioMark.MAX);
         if (itemButton != null) itemButton.active = spot != null
                 && (mark == null || mark.kind() != StudioMark.Kind.ITEM) && (mark != null || marks.size() < StudioMark.MAX);
+        if (soundButton != null) soundButton.active = spot != null
+                && (mark == null || mark.kind() != StudioMark.Kind.SOUND) && (mark != null || marks.size() < StudioMark.MAX);
         if (previousButton != null) previousButton.active = mark != null;
         if (nextButton != null) nextButton.active = mark != null;
         if (removeButton != null) removeButton.active = mark != null;
-        if (pickItemsButton != null) pickItemsButton.active = spot != null && (mark == null ? marks.size() < StudioMark.MAX : mark.kind() == StudioMark.Kind.ITEM);
+        if (pickItemsButton != null) {
+            boolean sound = mark != null && mark.kind() == StudioMark.Kind.SOUND;
+            pickItemsButton.active = spot != null && (mark == null ? marks.size() < StudioMark.MAX : mark.kind() == StudioMark.Kind.ITEM || sound);
+            pickItemsButton.setMessage(Component.literal(sound ? "Pick sound..." : "Items..."));
+        }
         boolean travels = mark != null && mark.kind() == StudioMark.Kind.ITEM && mark.to().isPresent();
         for (Button button : new Button[] {appearButton, vanishButton, alwaysButton}) if (button != null) button.active = mark != null;
         for (Button button : new Button[] {leaveButton, arriveButton}) if (button != null) button.active = travels;
 
-        if (turnButton != null) {
+        if (turnButton != null && mark != null && mark.kind() == StudioMark.Kind.SOUND) {
+            turnButton.active = true;
+            turnButton.setMessage(Component.literal(mark.yaw() == 0 ? "Once" : "Every " + seconds100(mark.yaw())));
+            turnButton.setTooltip(Tooltip.create(Component.literal("Once as the work reaches its start, or again and again until its end. Click: change")));
+        } else if (turnButton != null) {
             boolean item = mark != null && mark.kind() == StudioMark.Kind.ITEM;
             turnButton.active = mark != null && mark.kind() != StudioMark.Kind.PARTICLES;
             turnButton.setMessage(Component.literal(!item ? "Turn" : pickingTo ? "Pick spot..." : mark.to().isPresent() ? "Stay" : "Travel"));
@@ -478,6 +495,7 @@ public class StudioScreen extends Screen {
         switch (kind) {
             case FIGURE -> rules.figures().forEach(id -> usable.add(id.toString()));
             case ITEM -> usable.addAll(StudioMark.DISPLAYS);
+            case SOUND -> usable.addAll(soundIds());
             case PARTICLES -> {
                 for (Identifier id : rules.particles()) if (StudioMark.particle(id) != null) usable.add(id.toString());
             }
@@ -485,8 +503,46 @@ public class StudioScreen extends Screen {
         return usable;
     }
 
+    private static String seconds100(int ticks) {
+        return String.format(Locale.ROOT, "%.1fs", ticks / 20.0F);
+    }
+
+    /** Every sound of the game (modded ones too), by id. */
+    private static List<String> soundIds() {
+        List<String> ids = new ArrayList<>();
+        for (Identifier id : BuiltInRegistries.SOUND_EVENT.keySet()) ids.add(id.toString());
+        ids.sort(null);
+        return ids;
+    }
+
+    /** Plays a sound in the studio, to hear it. */
+    private static void hear(String id) {
+        Identifier sound = Identifier.tryParse(id);
+        if (sound == null) return;
+        BuiltInRegistries.SOUND_EVENT.getOptional(sound).ifPresent(event -> Minecraft.getInstance().getSoundManager()
+                .play(net.minecraft.client.resources.sounds.SimpleSoundInstance.forUI(event, 1.0F)));
+    }
+
+    /** Opens the sound list for the chosen spot: its sound anchor's sound, or a new sound anchor once one is picked. */
+    private void pickSound() {
+        if (spot == null) return;
+        BlockPos at = spot;
+        StudioMark mark = marks.get(at);
+        String current = mark != null && mark.kind() == StudioMark.Kind.SOUND ? mark.what() : null;
+        minecraft.setScreen(new IdPickerScreen(this, "Pick a sound", soundIds(), current, StudioScreen::hear, id -> {
+            StudioMark now = marks.get(at);
+            if (now != null && now.kind() == StudioMark.Kind.SOUND) marks.put(at, now.withWhat(id));
+            else if (now != null || marks.size() < StudioMark.MAX) marks.put(at, new StudioMark(at, StudioMark.Kind.SOUND, id, 0));
+        }));
+    }
+
     private void putMark(StudioMark.Kind kind) {
         if (spot == null) return;
+        if (kind == StudioMark.Kind.SOUND) {
+            pickingTo = false;
+            pickSound();
+            return;
+        }
         List<String> choices = choicesFor(kind);
         if (choices.isEmpty()) return;
         pickingTo = false;
@@ -507,7 +563,10 @@ public class StudioScreen extends Screen {
     private void turnMark() {
         StudioMark mark = spot == null ? null : marks.get(spot);
         if (mark == null) return;
-        if (mark.kind() == StudioMark.Kind.ITEM) {
+        if (mark.kind() == StudioMark.Kind.SOUND) { // once, or again every so often
+            List<Integer> repeats = StudioMark.SOUND_REPEATS;
+            marks.put(spot, mark.withYaw(repeats.get((Math.max(0, repeats.indexOf(mark.yaw())) + 1) % repeats.size())));
+        } else if (mark.kind() == StudioMark.Kind.ITEM) {
             if (pickingTo || mark.to().isPresent()) {
                 pickingTo = false;
                 marks.put(spot, mark.withTo(java.util.Optional.empty()));
@@ -542,6 +601,10 @@ public class StudioScreen extends Screen {
         if (spot == null) return;
         BlockPos at = spot;
         StudioMark mark = marks.get(at);
+        if (mark != null && mark.kind() == StudioMark.Kind.SOUND) {
+            pickSound();
+            return;
+        }
         if (mark != null && mark.kind() != StudioMark.Kind.ITEM) return;
         StudioMark start = mark != null ? mark : new StudioMark(at, StudioMark.Kind.ITEM, StudioMark.DISPLAYS.getFirst(), 0);
         minecraft.setScreen(new ItemListScreen(this, start, (items, shows) -> {
@@ -612,7 +675,27 @@ public class StudioScreen extends Screen {
             onClose();
             return;
         }
-        if (playing) clock++;
+        if (playing) {
+            float before = progress(0);
+            clock++;
+            playSounds(before, progress(0));
+        }
+    }
+
+    /** The preview's sounds, as the machine plays them: at their start, and again every so often for a repeating one. */
+    private void playSounds(float before, float now) {
+        boolean wrapped = now < before; // a new operation began
+        for (StudioMark mark : marks.values()) {
+            if (mark.kind() != StudioMark.Kind.SOUND) continue;
+            float from = mark.times().showFrom() / 100.0F, until = mark.times().showUntil() / 100.0F;
+            boolean reached = wrapped ? (now >= from || before < from) : before < from && now >= from;
+            if (mark.times().shownAlways()) reached = wrapped;
+            if (mark.yaw() > 0) {
+                int tick = Math.round(now * OPERATION);
+                reached = now >= from && now <= until && (tick - Math.round(from * OPERATION)) % mark.yaw() == 0;
+            }
+            if (reached) hear(mark.what());
+        }
     }
 
     @Override
@@ -1042,6 +1125,9 @@ public class StudioScreen extends Screen {
 
     private static String shortName(StudioMark mark) {
         Identifier id = mark.kind() == StudioMark.Kind.ITEM ? null : mark.id();
+        if (mark.kind() == StudioMark.Kind.SOUND && id != null) {
+            return id.getPath().replace('_', ' ') + (mark.yaw() == 0 ? "" : ", every " + seconds100(mark.yaw()));
+        }
         String name = id == null ? mark.what() : id.getPath();
         if (mark.kind() == StudioMark.Kind.ITEM && !mark.items().isEmpty()) {
             name = mark.items().size() == 1 ? entryName(mark.items().getFirst()).getString() : mark.items().size() + " items in turn";
@@ -1128,7 +1214,7 @@ public class StudioScreen extends Screen {
                     y += 32;
                 }
             }
-            help = List.of("Click a side of a block:", "the spot in front of it", "Then particles, a figure", "or an item",
+            help = List.of("Click a side of a block:", "the spot in front of it", "Then Fx, a Mob, an Item", "or a Sound",
                     "Click an anchor: change it", "Drag the work bar, then", "Appear / Vanish here", "Hide layers to reach inside");
         }
         for (String line : help) {
@@ -1244,6 +1330,9 @@ public class StudioScreen extends Screen {
         float progress = progress(partialTicks);
         for (StudioMark mark : marks.values()) {
             if (mark.offset().getY() > top || !mark.times().shows(progress)) continue;
+            if (mark.kind() == StudioMark.Kind.SOUND) {
+                pieces.add(new StudioRenderState.Piece(pieceMesh(SOUND_MARK), Vec3.atLowerCornerOf(mark.offset()), new Vec3(0, time * 2, 0), 0.3F));
+            }
             if (mark.kind() == StudioMark.Kind.PARTICLES) {
                 float bob = playing ? (float) Math.sin(time / 6.0) * 0.08F : 0;
                 pieces.add(new StudioRenderState.Piece(pieceMesh(PARTICLE_MARK), Vec3.atLowerCornerOf(mark.offset()).add(0, bob, 0),
@@ -1370,6 +1459,37 @@ public class StudioScreen extends Screen {
             } catch (Throwable e) { // a mob that can't be shown must never take the game down
                 standIns.put(figureId, null);
                 AlchyX.LOGGER.warn("AlchyX: can't show {} in the Machine Studio: {}", figureId, e.toString());
+            }
+        }
+        // A spawner with a mob in its data: that mob turning inside, small, like the real one
+        for (Map.Entry<BlockPos, BlockState> entry : looks.entrySet()) {
+            BlockPos cell = entry.getKey();
+            if (cell.getY() > top || !entry.getValue().is(Blocks.SPAWNER)) continue;
+            Identifier mobId = Identifier.tryParse(dataOf(cell).getCompoundOrEmpty("SpawnData").getCompoundOrEmpty("entity").getStringOr("id", ""));
+            if (mobId == null || mobId.getPath().isEmpty()) continue;
+            Entity entity = standIns.computeIfAbsent(mobId, id -> create(level, id));
+            if (entity == null) continue;
+            try {
+                entity.setPos(lit.x, lit.y, lit.z);
+                entity.xo = entity.xOld = lit.x;
+                entity.yo = entity.yOld = lit.y;
+                entity.zo = entity.zOld = lit.z;
+                entity.setYRot(0);
+                entity.yRotO = 0;
+                entity.tickCount = (int) clock;
+                if (entity instanceof LivingEntity living) {
+                    living.yBodyRot = living.yBodyRotO = 0;
+                    living.yHeadRot = living.yHeadRotO = 0;
+                }
+                EntityRenderState state = Minecraft.getInstance().getEntityRenderDispatcher().extractEntity(entity, partialTicks);
+                state.shadowPieces.clear();
+                state.shadowRadius = 0;
+                state.nameTag = null;
+                float size = 0.53125F / Math.max(0.5F, Math.max(entity.getBbWidth(), entity.getBbHeight()));
+                float spin = (clock + (playing ? partialTicks : 0)) * 6.0F;
+                figures.add(new Puppets.Prepared(state, cell.getX() + 0.5F, cell.getY() + 0.2F, cell.getZ() + 0.5F, size, spin));
+            } catch (Throwable e) {
+                standIns.put(mobId, null);
             }
         }
         return figures;

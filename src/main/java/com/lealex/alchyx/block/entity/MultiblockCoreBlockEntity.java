@@ -491,6 +491,7 @@ public abstract class MultiblockCoreBlockEntity extends BlockEntity {
         }
         if (next == null) motions.remove(offset);
         else motions.put(offset, next);
+        if (next != null) com.lealex.alchyx.block.ChamberShellBlock.unseal(level, pos);
         setups.remove(offset);
         motionsVersion++;
         setChanged();
@@ -517,6 +518,7 @@ public abstract class MultiblockCoreBlockEntity extends BlockEntity {
             BlockState look = com.lealex.alchyx.block.ChamberShellBlock.lookAt(level, pos);
             if (!entry.getValue().fits(look)) continue;
             kept.put(entry.getKey().immutable(), entry.getValue());
+            com.lealex.alchyx.block.ChamberShellBlock.unseal(level, pos);
             com.lealex.alchyx.animation.MotionSetup setup = wantedSetups.getOrDefault(entry.getKey(), com.lealex.alchyx.animation.MotionSetup.ALWAYS).tidy(entry.getValue(), look);
             if (!setup.equals(com.lealex.alchyx.animation.MotionSetup.ALWAYS)) keptSetups.put(entry.getKey().immutable(), setup);
         }
@@ -532,6 +534,8 @@ public abstract class MultiblockCoreBlockEntity extends BlockEntity {
             boolean allowed = switch (mark.kind()) {
                 case PARTICLES -> rules.particles().contains(mark.id()) && com.lealex.alchyx.animation.StudioMark.particle(mark.id()) != null;
                 case FIGURE -> mark.id() != null && rules.figures().contains(mark.id());
+                case SOUND -> mark.id() != null && net.minecraft.core.registries.BuiltInRegistries.SOUND_EVENT.containsKey(mark.id())
+                        && com.lealex.alchyx.animation.StudioMark.SOUND_REPEATS.contains(mark.yaw());
                 case ITEM -> com.lealex.alchyx.animation.StudioMark.DISPLAYS.contains(mark.what());
             };
             if (!allowed || !taken.add(at.immutable())) continue;
@@ -952,7 +956,16 @@ public abstract class MultiblockCoreBlockEntity extends BlockEntity {
                 if (level.getBlockEntity(pos) instanceof ChamberShellBlockEntity shell && shell.isRestore()) {
                     // An absorbed valuable block (a machine core inside the nexus): put it back
                     shell.markRestoring();
+                    net.minecraft.nbt.CompoundTag original = shell.getOriginalData();
                     level.setBlock(pos.immutable(), shell.getDisguise(), Block.UPDATE_ALL);
+                    // The data it had (a spawner's mob): as it was, never what the studio drew with
+                    if (original != null && level.getBlockEntity(pos) instanceof net.minecraft.world.level.block.entity.BlockEntity real
+                            && !(real instanceof ChamberShellBlockEntity)) {
+                        real.loadCustomOnly(net.minecraft.world.level.storage.TagValueInput.create(
+                                net.minecraft.util.ProblemReporter.DISCARDING, level.registryAccess(), original));
+                        real.setChanged();
+                        level.sendBlockUpdated(pos, real.getBlockState(), real.getBlockState(), Block.UPDATE_ALL);
+                    }
                 } else {
                     level.destroyBlock(pos.immutable(), false);
                 }

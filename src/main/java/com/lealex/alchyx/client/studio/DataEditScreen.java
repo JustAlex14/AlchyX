@@ -54,11 +54,21 @@ public class DataEditScreen extends Screen {
         int left = (width - WIDE) / 2, top = 34, bottom = height - 30;
         int boxTop = spawner() ? top + 24 : top;
         if (spawner()) {
+            String typed = mobBox == null ? "" : mobBox.getValue();
             mobBox = addRenderableWidget(new EditBox(font, left, top, WIDE - 64, 18, Component.literal("Mob")));
+            mobBox.setValue(typed);
             mobBox.setHint(Component.literal("A mob's id: minecraft:blaze"));
             mobBox.setMaxLength(128);
-            Button set = addRenderableWidget(Button.builder(Component.literal("Set mob"), b -> setMob()).bounds(left + WIDE - 60, top - 1, 60, 20).build());
-            set.setTooltip(Tooltip.create(Component.literal("The spawner shows this mob turning inside")));
+            Button set = addRenderableWidget(Button.builder(Component.literal("Pick mob..."), b -> {
+                java.util.List<String> mobs = new java.util.ArrayList<>();
+                for (Identifier id : BuiltInRegistries.ENTITY_TYPE.keySet()) mobs.add(id.toString());
+                mobs.sort(null);
+                minecraft.setScreen(new IdPickerScreen(this, "Pick the spawner's mob", mobs, null, null, id -> {
+                    if (mobBox != null) mobBox.setValue(id);
+                    setMob();
+                }));
+            }).bounds(left + WIDE - 60, top - 1, 60, 20).build());
+            set.setTooltip(Tooltip.create(Component.literal("The spawner shows this mob turning inside (or type its id and press Enter)")));
         }
         box = addRenderableWidget(MultiLineEditBox.builder().setX(left).setY(boxTop).setPlaceholder(Component.literal("{}"))
                 .build(font, WIDE, Math.max(40, bottom - 30 - boxTop), Component.literal("Data")));
@@ -97,6 +107,15 @@ public class DataEditScreen extends Screen {
         text = NbtUtils.prettyPrint(tag, true);
         if (box != null) box.setValue(text);
         problem = null;
+    }
+
+    @Override
+    public boolean keyPressed(net.minecraft.client.input.KeyEvent event) {
+        if ((event.key() == 257 || event.key() == 335) && mobBox != null && mobBox.isFocused()) {
+            setMob();
+            return true;
+        }
+        return super.keyPressed(event);
     }
 
     private @Nullable CompoundTag parsed() {

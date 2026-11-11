@@ -31,6 +31,8 @@ import java.util.Optional;
  *       "output", "result"), each with its own {@link ItemShow}: when in the work it shows and how it moves (spins,
  *       stays still, bobs, or travels to {@code to} through its time). Without items, the display {@code what}
  *       floats there (and travels to {@code to}, leaving and arriving as {@link Times} say).</li>
+ *   <li>{@link Kind#SOUND}: a sound of that id plays there as the work reaches its start (its show time), once,
+ *       or again every {@code yaw} ticks until its end when {@code yaw} is more than 0.</li>
  * </ul>
  * {@code what} is the particle type, the entity type or the display. {@link Times}: when in the work it shows, and
  * when a traveling item leaves and arrives.
@@ -153,7 +155,7 @@ public record StudioMark(BlockPos offset, Kind kind, String what, int yaw, Optio
     }
 
     public enum Kind implements StringRepresentable {
-        PARTICLES("particles"), FIGURE("figure"), ITEM("item");
+        PARTICLES("particles"), FIGURE("figure"), ITEM("item"), SOUND("sound");
 
         public static final Codec<Kind> CODEC = StringRepresentable.fromEnum(Kind::values);
         private final String name;
@@ -273,6 +275,9 @@ public record StudioMark(BlockPos offset, Kind kind, String what, int yaw, Optio
             ItemShow.STREAM_CODEC.apply(ByteBufCodecs.list(MAX_ITEMS)), StudioMark::shows,
             StudioMark::new);
 
+    /** How often a sound anchor plays again, in ticks (0: once, as the work reaches its start). */
+    public static final List<Integer> SOUND_REPEATS = List.of(0, 10, 20, 40);
+
     /** The particle to show, if the id names a plain particle type (one that needs no extra settings). */
     public static @Nullable ParticleOptions particle(@Nullable Identifier id) {
         if (id == null) return null;
@@ -295,6 +300,12 @@ public record StudioMark(BlockPos offset, Kind kind, String what, int yaw, Optio
                 if (particle == null) yield List.of();
                 yield List.of(new Effect.Particle(new Timing(when, 4, 1.0F, 0, Map.of(), Timing.Where.EVERYWHERE).between(from, until), Optional.of(particle),
                         Optional.empty(), at, Optional.empty(), new Vec3(0.25, 0.2, 0.25), 2, 0.01, Effect.ParticleStyle.SPREAD, 0.91));
+            }
+            case SOUND -> {
+                if (id == null || !BuiltInRegistries.SOUND_EVENT.containsKey(id)) yield List.of();
+                Timing timing = yaw > 0 ? new Timing(Trigger.WORKING, yaw, 1.0F, 0, Map.of(), Timing.Where.EVERYWHERE).between(from, until)
+                        : new Timing(Trigger.START, 1, 1.0F, 0, Map.of(), Timing.Where.EVERYWHERE).between(from, until);
+                yield List.of(new Effect.Sound(timing, id, at, 1.0F, 1.0F, 0.05F));
             }
             case FIGURE -> id == null ? List.of() : List.of(new Effect.Figure(new Timing(Trigger.ALWAYS, 1, 1.0F, 0, Map.of(), Timing.Where.EVERYWHERE).between(from, until),
                     Optional.of(id), Optional.empty(), Optional.empty(), at, Optional.empty(), Optional.of((float) yaw), false,

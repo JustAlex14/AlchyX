@@ -260,7 +260,13 @@ public final class MiniatureAnimation {
                     fire = false;
                 }
             } else {
-                fire = timing.when() == Trigger.START ? started : finished;
+                if (timing.when() == Trigger.START && timing.windowed()) {
+                    // "start" with "between": once each operation, as it reaches its start (a keyframe of the work)
+                    fire = working && counters[i] != opCount + 1 && timing.within(working, state.progress());
+                    if (fire) counters[i] = opCount + 1;
+                } else {
+                    fire = timing.when() == Trigger.START ? started : finished;
+                }
             }
             if (!fire || !timing.levelsMet(state::level)) continue; // "min_level"
             if (!timing.within(working, state.progress())) continue; // "between"

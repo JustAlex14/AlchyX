@@ -82,7 +82,7 @@ public class ChamberShellBlock extends Block implements EntityBlock {
     public static void place(Level level, BlockPos pos, BlockState disguise, boolean hidden, boolean restore, long veiledBy,
                              boolean seeThrough) {
         BlockState shell = AlchyXRegistries.CHAMBER_SHELL.get().defaultBlockState()
-                .setValue(OPAQUE, !hidden && !seeThrough && disguise.isSolidRender())
+                .setValue(OPAQUE, !hidden && !seeThrough && disguise.isSolidRender() && !strikes(disguise))
                 .setValue(LIGHT, Math.clamp(disguise.getLightEmission(level, pos), 0, 15))
                 .setValue(SMOKING, !hidden && smokes(disguise));
         // UPDATE_KNOWN_SHAPE: don't make the neighbors recompute their shape. Otherwise a corner stair next to a
@@ -99,13 +99,35 @@ public class ChamberShellBlock extends Block implements EntityBlock {
         }
         level.setBlock(pos, shell, Block.UPDATE_CLIENTS | Block.UPDATE_KNOWN_SHAPE);
         if (level.getBlockEntity(pos) instanceof ChamberShellBlockEntity entity) {
-            if (data != null) entity.setData(data);
-            else if (entity.hasData() && !entity.getDisguise().is(disguise.getBlock())) entity.setData(null);
+            if (data != null) {
+                entity.setData(data);
+                entity.setOriginalData(data);
+            } else if (entity.hasData() && !entity.getDisguise().is(disguise.getBlock())) {
+                entity.setData(null);
+                entity.setOriginalData(null);
+            }
             entity.markConverted(level.getGameTime());
             entity.markVeiled(veiledBy);
             entity.setHidden(hidden);
             entity.setRestore(restore);
             entity.setDisguise(disguise);
+        }
+    }
+
+    /**
+     * A piston base: never opaque, as it may strike (its extended look isn't a full block: an opaque shell would
+     * make the blocks around it hide their faces, and holes show where its front plate was).
+     */
+    public static boolean strikes(BlockState disguise) {
+        return disguise.getBlock() instanceof net.minecraft.world.level.block.piston.PistonBaseBlock;
+    }
+
+    /** Makes an already placed shell see-through if its look says so (a piston base formed before {@link #strikes}). */
+    public static void unseal(Level level, BlockPos pos) {
+        BlockState state = level.getBlockState(pos);
+        if (!(state.getBlock() instanceof ChamberShellBlock) || !state.getValue(OPAQUE)) return;
+        if (level.getBlockEntity(pos) instanceof ChamberShellBlockEntity entity && strikes(entity.getDisguise())) {
+            level.setBlock(pos, state.setValue(OPAQUE, false), Block.UPDATE_CLIENTS | Block.UPDATE_KNOWN_SHAPE);
         }
     }
 
@@ -116,7 +138,8 @@ public class ChamberShellBlock extends Block implements EntityBlock {
     public static void settle(Level level, BlockPos pos) {
         BlockState state = level.getBlockState(pos);
         if (!(state.getBlock() instanceof ChamberShellBlock) || state.getValue(OPAQUE)) return;
-        if (level.getBlockEntity(pos) instanceof ChamberShellBlockEntity entity && !entity.isHidden() && entity.getDisguise().isSolidRender()) {
+        if (level.getBlockEntity(pos) instanceof ChamberShellBlockEntity entity && !entity.isHidden() && entity.getDisguise().isSolidRender()
+                && !strikes(entity.getDisguise())) {
             level.setBlock(pos, state.setValue(OPAQUE, true), Block.UPDATE_CLIENTS | Block.UPDATE_KNOWN_SHAPE);
         }
     }

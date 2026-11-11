@@ -92,6 +92,7 @@ public class ChamberShellBlockEntity extends BlockEntity {
     // ---- The disguise's own block entity data (a spawner's mob, a banner's patterns...) ----
 
     private @Nullable CompoundTag data;           // as the block had it when it turned into a shell, or as set in the studio
+    private @Nullable CompoundTag original;       // as the block had it: what it gets back when the machine breaks (never edited)
     private @Nullable BlockEntity puppet;         // client: the disguise's block entity made from it, only drawn
     private boolean puppetFailed;                 // client: it couldn't be made or ticked: don't try again
     private long puppetTick = Long.MIN_VALUE;
@@ -108,6 +109,17 @@ public class ChamberShellBlockEntity extends BlockEntity {
         puppetFailed = false;
         setChanged();
         if (level != null) level.sendBlockUpdated(worldPosition, getBlockState(), getBlockState(), Block.UPDATE_CLIENTS);
+    }
+
+    /** The data the real block had (put back into it when the machine gives it back), or null. Server side. */
+    public @Nullable CompoundTag getOriginalData() {
+        return original == null ? null : original.copy();
+    }
+
+    /** Keeps the data the real block had, to give it back (see {@link #getOriginalData}). */
+    public void setOriginalData(@Nullable CompoundTag original) {
+        this.original = original == null || original.isEmpty() ? null : original.copy();
+        setChanged();
     }
 
     public boolean hasData() {
@@ -304,6 +316,7 @@ public class ChamberShellBlockEntity extends BlockEntity {
         output.putLong("convertedAt", convertedAt);
         if (veiledBy != 0L) output.putLong("veiledBy", veiledBy);
         if (data != null) output.store("data", CompoundTag.CODEC, data);
+        if (original != null && (level == null || !level.isClientSide())) output.store("original_data", CompoundTag.CODEC, original);
     }
 
     @Override
@@ -317,6 +330,7 @@ public class ChamberShellBlockEntity extends BlockEntity {
         convertedAt = input.getLongOr("convertedAt", Long.MIN_VALUE / 2);
         veiledBy = input.getLongOr("veiledBy", 0L);
         CompoundTag readData = input.read("data", CompoundTag.CODEC).orElse(null);
+        original = input.read("original_data", CompoundTag.CODEC).orElse(null);
         if (!java.util.Objects.equals(readData, data)) {
             data = readData;
             puppet = null;
@@ -342,7 +356,9 @@ public class ChamberShellBlockEntity extends BlockEntity {
 
     @Override
     public CompoundTag getUpdateTag(HolderLookup.Provider registries) {
-        return saveCustomOnly(registries);
+        CompoundTag tag = saveCustomOnly(registries);
+        tag.remove("original_data"); // (the server's business: clients only draw "data")
+        return tag;
     }
 
     @Override

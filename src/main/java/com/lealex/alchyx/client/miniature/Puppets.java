@@ -70,7 +70,11 @@ public final class Puppets {
     }
 
     /** A figure ready to draw with its feet at a place counted from the box's lowest corner. */
-    public record Prepared(EntityRenderState state, float x, float y, float z) {}
+    public record Prepared(EntityRenderState state, float x, float y, float z, float scale, float spin) {
+        public Prepared(EntityRenderState state, float x, float y, float z) {
+            this(state, x, y, z, 1.0F, 0.0F);
+        }
+    }
 
     public static void clear() {
         GROUPS.clear();

@@ -189,6 +189,7 @@ public final class AnimationEngine {
             }
             if (!fire || !near) continue;
             if (!timing.levelsMet(core::getAnimationLevel)) continue; // "min_level"
+            if (!timing.within(working, core.getAnimationProgress(now))) continue; // "between"
             if (timing.chance() < 1.0F && random.nextFloat() >= timing.chance()) continue;
             if (timing.delay() > 0) rt.pending.add(new Pending(now + timing.delay(), effect));
             else fire(level, core, rt, effect, now);
@@ -449,6 +450,7 @@ public final class AnimationEngine {
                 if (effects.get(i) instanceof Effect.Figure figure) {
                     List<Vec3> at = positions(level, core, rt, rotation, figure.at());
                     if (at.isEmpty() || !figure.timing().levelsMet(core::getAnimationLevel)) continue; // "min_level"
+                    if (!figure.timing().within(working, core.getAnimationProgress(time))) continue; // "between"
                     Vec3 feet = at.getFirst().add(0, -0.5, 0); // bottom of the block
                     float yaw = figureYaw(level, core, rt, rotation, figure, feet);
                     FigureDrawer.Prepared prepared = FigureDrawer.prepare(core, i, level, figure, feet, yaw, working,
@@ -460,6 +462,7 @@ public final class AnimationEngine {
                 Trigger when = item.timing().when();
                 if (when.continuous() ? !when.holds(working) : !working) continue;
                 if (!item.timing().levelsMet(core::getAnimationLevel)) continue; // "min_level"
+                if (!item.timing().within(working, core.getAnimationProgress(time))) continue; // "between"
                 ItemStack stack = core.getAnimationDisplay(item.display());
                 if (stack.isEmpty()) continue;
                 ItemStackRenderState state = new ItemStackRenderState();
@@ -473,7 +476,7 @@ public final class AnimationEngine {
                 float bob = (float) Math.sin(time / 10.0) * item.bob();
                 List<Vec3> to = item.to().isEmpty() ? List.of() : positions(level, core, rt, rotation, item.to().get());
                 for (Vec3 from : positions(level, core, rt, rotation, item.at())) {
-                    Vec3 base = Effect.FloatingItem.along(from, to, progress);
+                    Vec3 base = item.along(from, to, progress);
                     for (int k = 0; k < copies; k++) {
                         float angle = time * speed + item.phase() + k * 360.0F / copies;
                         Vec3 pos = base.add(0, bob, 0);

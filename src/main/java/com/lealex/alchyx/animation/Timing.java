@@ -12,8 +12,30 @@ import net.minecraft.util.StringRepresentable;
  * "chance" (0 to 1, default 1), "delay" (ticks to wait after the trigger, default 0) and "min_level" (only while
  * each named level the machine publishes is at least that much, e.g. {"corruption": 4}; missing levels count as 0),
  * and "where" (see {@link Where}, default everywhere).
+ * "between" ([from, until], fractions of the operation, e.g. [0.9, 1]): only while the machine works and its current
+ * operation is that far along (an item that appears at the end, particles in the middle of the work).
  */
-public record Timing(Trigger when, int interval, float chance, int delay, java.util.Map<String, Integer> minLevel, Where where) {
+public record Timing(Trigger when, int interval, float chance, int delay, java.util.Map<String, Integer> minLevel, Where where,
+                     float from, float until) {
+
+    public Timing(Trigger when, int interval, float chance, int delay, java.util.Map<String, Integer> minLevel, Where where) {
+        this(when, interval, chance, delay, minLevel, where, 0.0F, 1.0F);
+    }
+
+    /** The same timing, playing only between these points of the operation (0 to 1). */
+    public Timing between(float from, float until) {
+        return new Timing(when, interval, chance, delay, minLevel, where, from, until);
+    }
+
+    /** Whether a "between" window is set. */
+    public boolean windowed() {
+        return from > 0.0F || until < 1.0F;
+    }
+
+    /** True if no "between" is set, or the machine works and its operation is within it. */
+    public boolean within(boolean working, float progress) {
+        return !windowed() || (working && progress >= from && progress <= until);
+    }
 
     /**
      * Where an effect plays: on the machine standing in the world, in miniatures of it, or both. For what a machine
@@ -50,8 +72,11 @@ public record Timing(Trigger when, int interval, float chance, int delay, java.u
             Codec.floatRange(0.0F, 1.0F).optionalFieldOf("chance", 1.0F).forGetter(Timing::chance),
             ExtraCodecs.NON_NEGATIVE_INT.optionalFieldOf("delay", 0).forGetter(Timing::delay),
             Codec.unboundedMap(Codec.STRING, Codec.INT).optionalFieldOf("min_level", java.util.Map.of()).forGetter(Timing::minLevel),
-            Where.CODEC.optionalFieldOf("where", Where.EVERYWHERE).forGetter(Timing::where)
-    ).apply(instance, Timing::new));
+            Where.CODEC.optionalFieldOf("where", Where.EVERYWHERE).forGetter(Timing::where),
+            Codec.floatRange(0.0F, 1.0F).listOf(2, 2).optionalFieldOf("between", java.util.List.of(0.0F, 1.0F))
+                    .forGetter(timing -> java.util.List.of(timing.from, timing.until))
+    ).apply(instance, (when, interval, chance, delay, minLevel, where, between) ->
+            new Timing(when, interval, chance, delay, minLevel, where, Math.min(between.get(0), between.get(1)), Math.max(between.get(0), between.get(1)))));
 
     /** True if every "min_level" is reached ({@code levels}: the machine's level by name, 0 if it has none). */
     public boolean levelsMet(java.util.function.ToIntFunction<String> levels) {

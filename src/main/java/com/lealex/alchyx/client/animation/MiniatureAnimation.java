@@ -263,6 +263,7 @@ public final class MiniatureAnimation {
                 fire = timing.when() == Trigger.START ? started : finished;
             }
             if (!fire || !timing.levelsMet(state::level)) continue; // "min_level"
+            if (!timing.within(working, state.progress())) continue; // "between"
             if (timing.chance() < 1.0F && random.nextFloat() >= timing.chance()) continue;
             if (timing.delay() > 0) pending.add(new Pending(clock + timing.delay(), effect));
             else fire(level, state, effect, placement);
@@ -412,6 +413,7 @@ public final class MiniatureAnimation {
         for (int i = 0; i < effects.size(); i++) {
             Effect effect = effects.get(i);
             if (!effect.timing().levelsMet(state::level)) continue; // "min_level"
+            if (!effect.timing().within(working, state.progress())) continue; // "between"
             if (!effect.timing().where().miniature()) continue;
             switch (effect) {
                 case Effect.FloatingItem item when plays.items -> item(frame, level, item, i, state, working, time);
@@ -436,7 +438,7 @@ public final class MiniatureAnimation {
         float bob = (float) Math.sin(time / 10.0) * item.bob();
         List<Vec3> to = item.to().isEmpty() ? List.of() : points(item.to().get());
         for (Vec3 from : points(item.at())) {
-            Vec3 base = Effect.FloatingItem.along(from, to, state.progress());
+            Vec3 base = item.along(from, to, state.progress());
             for (int k = 0; k < copies; k++) {
                 float angle = time * speed + item.phase() + k * 360.0F / copies;
                 Vec3 pos = base.add(0, bob, 0);

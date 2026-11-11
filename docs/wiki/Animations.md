@@ -34,6 +34,7 @@ machine is formed, and only for players within 64 blocks.
 | `interval` | 1 | for `always` / `idle` / `working`: ticks between runs (20 ticks = 1 second) |
 | `chance` | 1 | 0 to 1, chance to run each time |
 | `delay` | 0 | ticks to wait after the trigger (e.g. a sound 5 ticks after a piston extends) |
+| `between` | | `[from, until]`, fractions of the operation: only while the machine works and its operation is that far along, e.g. `[0.9, 1]` for a result that shows at the end |
 | `min_level` | | only while the machine's named levels are at least this much, e.g. `{"corruption": 4}` (machines publish them with `setAnimationLevel`; AlchyMastery: `corruption` = the sum of the installed upgrade tiers) |
 | `where` | `everywhere` | `everywhere`, `machine` (only on the machine standing in the world) or `miniature` (only in miniatures of it, see the end of this page) |
 
@@ -154,6 +155,7 @@ destructuration chamber):
 | `bob` | 0.05 | up-down float in blocks |
 | `phase` | 0 | degrees added to the angle: items sharing one orbit stay apart (e.g. 0 / 120 / 240) |
 | `to` | | a target the item travels to as the operation goes on: at `at` when it begins, at `to` when it ends (an ore carried from the hopper to the press) |
+| `travel` | `[0, 1]` | when in the operation the item leaves `at` and reaches `to` |
 
 ## `figure`
 

@@ -38,6 +38,8 @@ Once the machine stands, use the Recorder on its **core** with no corners marked
 - **Blocks** tab: **click** a block to choose it. **Shift + click** adds or removes one block. **Ctrl + click** chooses every block of that kind. Pick a **motion** on the right; greyed motions are the ones those blocks can't do.
 - **Anchors** tab: click the side of a block to pick the spot in front of it (inside the build or right around it). Then choose **Particles** (smoke, flames, enchanting glyphs...), a **Figure** (a villager, a golem, a cat...) or an **Item** (the item the machine works on: its input, output or result), and use **< >** to pick which one. **Turn** turns a figure. For an item, **Travel** then a click on another spot makes it travel there as the work goes on (the cobblestone carried from the hopper to the press). Click an anchor to change or **Remove** it. Up to 24 anchors.
 - The **work bar** at the bottom of the view plays a pretend operation: items travel and cauldrons fill along with it. Drag it to scrub through the work.
+- **Timing anchors**: drag the work bar to a point of the work, choose an anchor, and press **Appear here** or **Vanish here**: it only shows from / until there (a result that appears inside the machine at the end). For a traveling item, **Leave here** and **Arrive here** set when it starts and ends its way. **Reset times** shows it all the time again.
+- To put an anchor **inside** the build (the result appearing in the middle of the crusher), hide the top layers with **-**, then click the top of the block under the spot.
 - **Play / Pause** (or Space) previews the motions in the view, before anything changes in the world.
 - **Save** sends the motions to the machine. **Close** leaves without saving.
 

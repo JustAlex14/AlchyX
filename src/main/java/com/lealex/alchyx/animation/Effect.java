@@ -180,11 +180,12 @@ public sealed interface Effect permits Effect.Particle, Effect.Sound, Effect.Blo
      * evenly spaced (or one per "per_items" items in the stack, at most "copies"), "radius" for orbits,
      * "scale", "bob" (up-down amplitude in blocks), "phase" (degrees added to the angle: several items sharing an
      * orbit, e.g. 0 / 120 / 240, stay apart). "to": the item travels from "at" to there as the operation goes on
-     * (at "at" when it begins, at "to" when it ends): an ore carried from the hopper to the press.
+     * (at "at" when it begins, at "to" when it ends): an ore carried from the hopper to the press. "travel"
+     * ([from, until], fractions of the operation, default [0, 1]): when it leaves "at" and when it reaches "to".
      */
     record FloatingItem(Timing timing, String display, Target at, ItemMotion motion, float speed,
                         Optional<Float> workingSpeed, float radius, int copies, int perItems, float scale,
-                        float bob, float phase, Optional<Target> to) implements Effect {
+                        float bob, float phase, Optional<Target> to, List<Float> travel) implements Effect {
         public static final MapCodec<FloatingItem> MAP_CODEC = RecordCodecBuilder.mapCodec(instance -> instance.group(
                 Timing.MAP_CODEC.forGetter(FloatingItem::timing),
                 Codec.STRING.fieldOf("display").forGetter(FloatingItem::display),
@@ -198,14 +199,16 @@ public sealed interface Effect permits Effect.Particle, Effect.Sound, Effect.Blo
                 Codec.FLOAT.optionalFieldOf("scale", 0.5F).forGetter(FloatingItem::scale),
                 Codec.FLOAT.optionalFieldOf("bob", 0.05F).forGetter(FloatingItem::bob),
                 Codec.FLOAT.optionalFieldOf("phase", 0.0F).forGetter(FloatingItem::phase),
-                Target.CODEC.optionalFieldOf("to").forGetter(FloatingItem::to)
+                Target.CODEC.optionalFieldOf("to").forGetter(FloatingItem::to),
+                Codec.floatRange(0.0F, 1.0F).listOf(2, 2).optionalFieldOf("travel", List.of(0.0F, 1.0F)).forGetter(FloatingItem::travel)
         ).apply(instance, FloatingItem::new));
 
         /** Where the item is between "at" and "to" at this point (0 to 1) of the operation; just "at" without "to". */
-        public static Vec3 along(Vec3 from, java.util.List<Vec3> to, float progress) {
+        public Vec3 along(Vec3 from, List<Vec3> to, float progress) {
             if (to.isEmpty()) return from;
-            float p = Math.max(0, Math.min(1, progress));
-            return from.lerp(to.getFirst(), p);
+            float start = Math.min(travel.get(0), travel.get(1)), end = Math.max(travel.get(0), travel.get(1));
+            float p = end - start < 1e-4F ? (progress >= end ? 1 : 0) : (progress - start) / (end - start);
+            return from.lerp(to.getFirst(), Math.max(0, Math.min(1, p)));
         }
 
         @Override

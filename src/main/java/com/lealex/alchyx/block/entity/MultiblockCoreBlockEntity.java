@@ -521,7 +521,8 @@ public abstract class MultiblockCoreBlockEntity extends BlockEntity {
             };
             if (!allowed || !taken.add(at.immutable())) continue;
             keptMarks.add(new com.lealex.alchyx.animation.StudioMark(at.immutable(), mark.kind(), mark.what(), Math.floorMod(mark.yaw(), 360),
-                    mark.kind() == com.lealex.alchyx.animation.StudioMark.Kind.ITEM ? mark.to().map(BlockPos::immutable) : java.util.Optional.empty()));
+                    mark.kind() == com.lealex.alchyx.animation.StudioMark.Kind.ITEM ? mark.to().map(BlockPos::immutable) : java.util.Optional.empty(),
+                    mark.times().tidy()));
         }
         if (!kept.equals(motions) || !keptMarks.equals(marks)) {
             motions.clear();

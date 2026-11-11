@@ -112,6 +112,7 @@ public class StudioScreen extends Screen {
     private final List<@Nullable Motion> motionChoices = new ArrayList<>();
     private final List<Button> anchorButtons = new ArrayList<>();
     private @Nullable Button particlesButton, figureButton, itemButton, removeButton, previousButton, nextButton, turnButton;
+    private @Nullable Button appearButton, vanishButton, leaveButton, arriveButton, alwaysButton;
 
     public StudioScreen(MultiblockCoreBlockEntity core) {
         super(Component.literal("Machine Studio"));
@@ -226,7 +227,22 @@ public class StudioScreen extends Screen {
             if (spot != null) marks.remove(spot);
             refreshButtons();
         }).bounds(px + half + 4, py, half, 18).build());
-        anchorButtons.addAll(List.of(particlesButton, figureButton, itemButton, previousButton, nextButton, turnButton, removeButton));
+        // When in the work: set from where the work bar stands
+        py += ROW + 14;
+        appearButton = addRenderableWidget(Button.builder(Component.literal("Appear here"), b -> retime(0)).bounds(px, py, half, 18).build());
+        appearButton.setTooltip(Tooltip.create(Component.literal("It shows from this point of the work (the work bar)")));
+        vanishButton = addRenderableWidget(Button.builder(Component.literal("Vanish here"), b -> retime(1)).bounds(px + half + 4, py, half, 18).build());
+        vanishButton.setTooltip(Tooltip.create(Component.literal("It's gone from this point of the work")));
+        py += ROW;
+        leaveButton = addRenderableWidget(Button.builder(Component.literal("Leave here"), b -> retime(2)).bounds(px, py, half, 18).build());
+        leaveButton.setTooltip(Tooltip.create(Component.literal("The item starts traveling at this point of the work")));
+        arriveButton = addRenderableWidget(Button.builder(Component.literal("Arrive here"), b -> retime(3)).bounds(px + half + 4, py, half, 18).build());
+        arriveButton.setTooltip(Tooltip.create(Component.literal("The item reaches its end at this point of the work")));
+        py += ROW;
+        alwaysButton = addRenderableWidget(Button.builder(Component.literal("Reset times"), b -> retime(-1)).bounds(px, py, wide, 18).build());
+        alwaysButton.setTooltip(Tooltip.create(Component.literal("Shows all the time, travels through the whole work")));
+        anchorButtons.addAll(List.of(particlesButton, figureButton, itemButton, previousButton, nextButton, turnButton, removeButton,
+                appearButton, vanishButton, leaveButton, arriveButton, alwaysButton));
         refreshButtons();
     }
 
@@ -295,6 +311,9 @@ public class StudioScreen extends Screen {
         if (previousButton != null) previousButton.active = mark != null;
         if (nextButton != null) nextButton.active = mark != null;
         if (removeButton != null) removeButton.active = mark != null;
+        boolean travels = mark != null && mark.kind() == StudioMark.Kind.ITEM && mark.to().isPresent();
+        for (Button button : new Button[] {appearButton, vanishButton, alwaysButton}) if (button != null) button.active = mark != null;
+        for (Button button : new Button[] {leaveButton, arriveButton}) if (button != null) button.active = travels;
         if (turnButton != null) {
             boolean item = mark != null && mark.kind() == StudioMark.Kind.ITEM;
             turnButton.active = mark != null && mark.kind() != StudioMark.Kind.PARTICLES;
@@ -359,6 +378,23 @@ public class StudioScreen extends Screen {
         } else {
             marks.put(spot, mark.withYaw((mark.yaw() + 90) % 360));
         }
+        refreshButtons();
+    }
+
+    /** Sets one of the chosen anchor's times to where the work bar stands: 0 appear, 1 vanish, 2 leave, 3 arrive; -1 resets them. */
+    private void retime(int which) {
+        StudioMark mark = spot == null ? null : marks.get(spot);
+        if (mark == null) return;
+        int now = Math.round(progress(0) * 100);
+        StudioMark.Times t = mark.times();
+        StudioMark.Times changed = switch (which) {
+            case 0 -> new StudioMark.Times(now, Math.max(now, t.showUntil()), t.leave(), t.arrive());
+            case 1 -> new StudioMark.Times(Math.min(now, t.showFrom()), now, t.leave(), t.arrive());
+            case 2 -> new StudioMark.Times(t.showFrom(), t.showUntil(), now, Math.max(now, t.arrive()));
+            case 3 -> new StudioMark.Times(t.showFrom(), t.showUntil(), Math.min(now, t.leave()), now);
+            default -> StudioMark.Times.ALWAYS;
+        };
+        marks.put(spot, mark.withTimes(changed));
         refreshButtons();
     }
 
@@ -533,9 +569,15 @@ public class StudioScreen extends Screen {
     private @Nullable BlockPos spotAt(StudioView.Hit hit) {
         if (marks.containsKey(hit.cell()) && !looks.containsKey(hit.cell())) return hit.cell();
         BlockPos front = hit.cell().relative(hit.face());
+        if (front.getY() > top) return withinReach(front) ? front : null; // a hidden layer: the spot may be inside a block
         boolean near = front.getX() >= -1 && front.getY() >= -1 && front.getZ() >= -1
                 && front.getX() <= size.getX() && front.getY() <= size.getY() && front.getZ() <= size.getZ();
         return near && !looks.containsKey(front) ? front : null;
+    }
+
+    private boolean withinReach(BlockPos cell) {
+        return cell.getX() >= -1 && cell.getY() >= -1 && cell.getZ() >= -1
+                && cell.getX() <= size.getX() && cell.getY() <= size.getY() && cell.getZ() <= size.getZ();
     }
 
     @Override
@@ -593,6 +635,14 @@ public class StudioScreen extends Screen {
         graphics.fill(barLeft, y1 - 6, barRight, y1 - 3, EDGE);
         graphics.fill(barLeft, y1 - 6, filled, y1 - 3, ACCENT);
         graphics.fill(filled - 1, y1 - 8, filled + 1, y1 - 1, TEXT);
+        StudioMark picked = tab == Tab.ANCHORS && spot != null ? marks.get(spot) : null;
+        if (picked != null) { // the chosen anchor's times over the bar: when it shows (green), when it travels (blue)
+            int span = barRight - barLeft;
+            graphics.fill(barLeft + span * picked.times().showFrom() / 100, y1 - 9, barLeft + span * picked.times().showUntil() / 100, y1 - 7, GOOD);
+            if (picked.to().isPresent()) {
+                graphics.fill(barLeft + span * picked.times().leave() / 100, y1 - 3, barLeft + span * picked.times().arrive() / 100, y1 - 1, 0xFF66B3FF);
+            }
+        }
         String work = "Work " + Math.round(progress(a) * 100) + "%";
         graphics.text(font, work, barRight - font.width(work), y1 - 18, FAINT, false);
         if (pickingTo) graphics.text(font, "Click the spot the item travels to", x0 + 4, y0 + 4, WARN, true);
@@ -668,11 +718,17 @@ public class StudioScreen extends Screen {
                 int middle = px + PANEL_WIDE / 2;
                 graphics.text(font, shown, middle - font.width(shown) / 2, LIST_TOP + ROW + 5, TEXT, false);
             }
-            y = LIST_TOP + 3 * ROW + 4;
-            graphics.text(font, "Items show what it works on", tx, y, FAINT, false);
-            y += 14;
+            y = LIST_TOP + 3 * ROW + 3;
+            String when = mark == null ? "When in the work:" : mark.times().shownAlways() ? "Shows all the time"
+                    : "Shows " + mark.times().showFrom() + "% to " + mark.times().showUntil() + "%";
+            graphics.text(font, when, tx, y, mark == null ? FAINT : TEXT, false);
+            y = LIST_TOP + 6 * ROW + 14;
+            if (mark != null && mark.kind() == StudioMark.Kind.ITEM && mark.to().isPresent()) {
+                graphics.text(font, "Travels " + mark.times().leave() + "% to " + mark.times().arrive() + "%", tx, y, TEXT, false);
+                y += 12;
+            }
             help = List.of("Click a side of a block:", "the spot in front of it", "Then particles, a figure", "or an item",
-                    "Click an anchor: change it", "Work bar: drag to scrub");
+                    "Click an anchor: change it", "Drag the work bar, then", "Appear / Vanish here", "Hide layers to reach inside");
         }
         for (String line : help) {
             if (y > viewY1() - 10) break;
@@ -692,7 +748,7 @@ public class StudioScreen extends Screen {
 
     private boolean drawnApart(BlockPos cell) {
         Motion motion = edits.get(cell);
-        return playing && motion != null && motion.moves();
+        return motion != null && motion.moves();
     }
 
     /** What a cell looks like now in the preview: its own look, or the step a change of look is at. */
@@ -737,7 +793,7 @@ public class StudioScreen extends Screen {
     private List<StudioRenderState.Piece> pieces(float partialTicks) {
         List<StudioRenderState.Piece> pieces = new ArrayList<>();
         float time = clock + (playing ? partialTicks : 0);
-        if (playing) {
+        { // (paused or scrubbed, the moves stand where the clock left them)
             for (Map.Entry<BlockPos, Motion> entry : edits.entrySet()) {
                 BlockPos cell = entry.getKey();
                 BlockState look = looks.get(cell);
@@ -765,17 +821,19 @@ public class StudioScreen extends Screen {
             }
         }
         // Anchors: particles as a small glowing cube (bobbing while playing), a figure's spot as a thin plate
+        float progress = progress(partialTicks);
         for (StudioMark mark : marks.values()) {
-            if (mark.offset().getY() > top) continue;
+            if (mark.offset().getY() > top || !mark.times().shows(progress)) continue;
             if (mark.kind() == StudioMark.Kind.PARTICLES) {
                 float bob = playing ? (float) Math.sin(time / 6.0) * 0.08F : 0;
                 pieces.add(new StudioRenderState.Piece(pieceMesh(PARTICLE_MARK), Vec3.atLowerCornerOf(mark.offset()).add(0, bob, 0),
                         new Vec3(0, time * 4, 0), 0.3F));
             }
         }
-        float progress = progress(partialTicks);
         for (StudioMark mark : marks.values()) {
             if (mark.kind() != StudioMark.Kind.ITEM || mark.offset().getY() > top) continue;
+            boolean shown = mark.times().shows(progress);
+            if (!shown && !(tab == Tab.ANCHORS && mark.offset().equals(spot))) continue; // (its own spot still shows it, faintly)
             Vec3 from = Vec3.atLowerCornerOf(mark.offset());
             if (mark.to().isPresent()) {
                 Vec3 to = Vec3.atLowerCornerOf(mark.to().get());
@@ -783,10 +841,13 @@ public class StudioScreen extends Screen {
                 for (int i = 1; i < dots; i++) {
                     pieces.add(new StudioRenderState.Piece(pieceMesh(PATH_MARK), from.lerp(to, i / (double) dots), Vec3.ZERO, 0.1F));
                 }
-                pieces.add(new StudioRenderState.Piece(pieceMesh(ITEM_MARK), from.lerp(to, progress), new Vec3(0, time * 3, 0), 0.3F));
+                if (shown) {
+                    pieces.add(new StudioRenderState.Piece(pieceMesh(ITEM_MARK), from.lerp(to, mark.times().travel(progress)),
+                            new Vec3(0, time * 3, 0), 0.3F));
+                }
             } else {
                 float bob = playing ? (float) Math.sin(time / 10.0) * 0.05F : 0;
-                pieces.add(new StudioRenderState.Piece(pieceMesh(ITEM_MARK), from.add(0, bob, 0), new Vec3(0, time * 3, 0), 0.3F));
+                if (shown) pieces.add(new StudioRenderState.Piece(pieceMesh(ITEM_MARK), from.add(0, bob, 0), new Vec3(0, time * 3, 0), 0.3F));
             }
         }
         if (tab == Tab.ANCHORS) {
@@ -835,7 +896,7 @@ public class StudioScreen extends Screen {
         List<Puppets.Prepared> figures = new ArrayList<>();
         Vec3 lit = Minecraft.getInstance().player.position();
         for (StudioMark mark : marks.values()) {
-            if (mark.kind() != StudioMark.Kind.FIGURE || mark.offset().getY() > top) continue;
+            if (mark.kind() != StudioMark.Kind.FIGURE || mark.offset().getY() > top || !mark.times().shows(progress(partialTicks))) continue;
             Identifier figureId = mark.id();
             if (figureId == null) continue;
             Entity entity = standIns.computeIfAbsent(figureId, id -> create(level, id));

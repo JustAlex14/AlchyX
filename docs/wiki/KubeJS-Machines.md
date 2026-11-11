@@ -200,6 +200,76 @@ AlchyX registers every structure file as a Patchouli multiblock under its patter
 The same `"multiblock_id"` works in your own modpack book. The Structure Builder and the Manual are in the AlchyX creative tab;
 machine cores appear in KubeJS's tab like any script block.
 
+## 7. A machine players shape themselves (free build)
+
+A script machine can also have no fixed shape: each player builds it their own way and records it with the
+**Structure Recorder** (`alchyx:structure_recorder`). Only the pattern file changes; the core, recipes and
+animations work as above. Full reference: [Free-Build Machines](Free-Build-Machines).
+
+`kubejs/startup_scripts/machines.js`:
+```js
+StartupEvents.registry('block', event => {
+  event.create('mypack:free_press_core', 'alchyx:machine_core')
+    .displayName('Free Press Core')
+    .pattern('mypack:free_press')
+    .itemInputs(1)
+    .itemOutputs(1)
+    .texture('side', 'minecraft:block/piston_side')
+    .texture('top', 'minecraft:block/piston_top')
+    .texture('front', 'minecraft:block/observer_front')
+})
+```
+
+`kubejs/data/mypack/multiblock/free_press.json` (the grid is the core alone, the rules are in `free_build`):
+```json
+{
+  "core": "mypack:free_press_core",
+  "layers": [["X"]],
+  "key": {"X": {"core": true}},
+  "free_build": {
+    "max_width": 7,
+    "max_height": 5,
+    "min_blocks": 12,
+    "forbidden": ["minecraft:tnt", "#minecraft:leaves"],
+    "requires": [
+      {"block": "minecraft:piston", "count": 1, "name": "a piston"},
+      {"block": "#c:glass_blocks", "count": 2, "name": "glass"},
+      {"block": "#minecraft:stone_bricks", "count": 4, "name": "stone bricks"}
+    ],
+    "formed": "same",
+    "motions": ["spin", "bob", "strike", "swing", "shake"],
+    "motion_when": "working"
+  }
+}
+```
+
+`kubejs/data/mypack/machine_recipe/free_press_gravel.json`:
+```json
+{
+  "machine": "mypack:free_press_core",
+  "inputs": [{"item": "minecraft:cobblestone"}],
+  "outputs": [{"item": "minecraft:gravel"}],
+  "time": 60
+}
+```
+
+`kubejs/data/mypack/machine_animation/free_press.json` (block selectors find the blocks in each player's own build):
+```json
+{
+  "machine": "mypack:free_press",
+  "effects": [
+    {"type": "item", "display": "input", "at": [0, 1, 0], "motion": "spin", "speed": 1, "working_speed": 4, "scale": 0.5},
+    {"type": "sound", "when": "working", "interval": 30, "sound": "minecraft:block.piston.extend", "at": {"block": "minecraft:piston"}, "volume": 0.4},
+    {"type": "particle", "when": "working", "interval": 10, "particle": "minecraft:smoke", "at": [0, 1, 0], "count": 2, "spread": [0.2, 0.1, 0.2], "speed": 0.01},
+    {"type": "sound", "when": "finish", "sound": "minecraft:block.anvil.land", "volume": 0.3, "pitch": 1.5}
+  ]
+}
+```
+
+To test: place the core, build around it with at least a piston, 2 glass and 4 stone bricks (12 blocks or more,
+up to 7 wide and 5 high), use the Recorder on two opposite corners of the build, then on the core. Put cobblestone
+in the core: while it works, use the Recorder on blocks of the machine to make them spin, bob, strike, swing or shake.
+
 ## Before it's formed
 
 Right-clicking an unformed core opens its GUI too, with a **Show/Hide structure** button above it: small ghost

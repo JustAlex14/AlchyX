@@ -56,9 +56,11 @@ final class Motions {
         n = 0;
         for (StudioMark mark : core.marks()) {
             String anchor = "alchyx_mark_" + n++;
-            Effect effect = mark.effect(anchor, when);
+            String toAnchor = mark.to().isPresent() ? anchor + "_to" : null;
+            Effect effect = mark.effect(anchor, toAnchor, when);
             if (effect == null) continue;
             anchors.put(anchor, mark.offset());
+            if (toAnchor != null) anchors.put(toAnchor, mark.to().get());
             effects.add(effect);
         }
         ResolvedAnimation resolved = effects.isEmpty() ? null : new ResolvedAnimation(core.patternId(), Optional.empty(), anchors,

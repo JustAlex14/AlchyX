@@ -151,6 +151,7 @@ destructuration chamber):
 | `scale` | 0.5 | |
 | `bob` | 0.05 | up-down float in blocks |
 | `phase` | 0 | degrees added to the angle: items sharing one orbit stay apart (e.g. 0 / 120 / 240) |
+| `to` | | a target the item travels to as the operation goes on: at `at` when it begins, at `to` when it ends (an ore carried from the hopper to the press) |
 
 ## `figure`
 

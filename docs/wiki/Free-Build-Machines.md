@@ -36,8 +36,9 @@ Once the machine stands, use the Recorder on its **core** with no corners marked
 
 - **Drag** to turn the view, use the **wheel** to zoom, and use the **- / +** layer buttons to hide the top layers and look inside.
 - **Blocks** tab: **click** a block to choose it. **Shift + click** adds or removes one block. **Ctrl + click** chooses every block of that kind. Pick a **motion** on the right; greyed motions are the ones those blocks can't do.
-- **Anchors** tab: click the side of a block to pick the spot in front of it (inside the build or right around it). Then choose **Particles** (smoke, flames, enchanting glyphs...) or a **Figure** (a villager, a golem, a cat...), and use **< >** to pick which one and **Turn** to turn a figure. Click an anchor to change or **Remove** it. Up to 24 anchors.
-- Pick a **motion** on the right. **Play / Pause** (or Space) previews the motions in the view, before anything changes in the world.
+- **Anchors** tab: click the side of a block to pick the spot in front of it (inside the build or right around it). Then choose **Particles** (smoke, flames, enchanting glyphs...), a **Figure** (a villager, a golem, a cat...) or an **Item** (the item the machine works on: its input, output or result), and use **< >** to pick which one. **Turn** turns a figure. For an item, **Travel** then a click on another spot makes it travel there as the work goes on (the cobblestone carried from the hopper to the press). Click an anchor to change or **Remove** it. Up to 24 anchors.
+- The **work bar** at the bottom of the view plays a pretend operation: items travel and cauldrons fill along with it. Drag it to scrub through the work.
+- **Play / Pause** (or Space) previews the motions in the view, before anything changes in the world.
 - **Save** sends the motions to the machine. **Close** leaves without saving.
 
 The machine must stay formed and within 16 blocks while the screen is open. Only motions the machine allows are offered, and the server checks them again on save.

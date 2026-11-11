@@ -434,7 +434,9 @@ public final class MiniatureAnimation {
                 ? Math.max(1, Math.min(item.copies(), (stack.getCount() + item.perItems() - 1) / item.perItems()))
                 : item.copies();
         float bob = (float) Math.sin(time / 10.0) * item.bob();
-        for (Vec3 base : points(item.at())) {
+        List<Vec3> to = item.to().isEmpty() ? List.of() : points(item.to().get());
+        for (Vec3 from : points(item.at())) {
+            Vec3 base = Effect.FloatingItem.along(from, to, state.progress());
             for (int k = 0; k < copies; k++) {
                 float angle = time * speed + item.phase() + k * 360.0F / copies;
                 Vec3 pos = base.add(0, bob, 0);

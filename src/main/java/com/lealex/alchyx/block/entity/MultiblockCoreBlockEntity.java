@@ -511,14 +511,17 @@ public abstract class MultiblockCoreBlockEntity extends BlockEntity {
         for (com.lealex.alchyx.animation.StudioMark mark : wantedMarks) {
             if (keptMarks.size() >= com.lealex.alchyx.animation.StudioMark.MAX) break;
             BlockPos at = mark.offset();
-            if (at.getX() < low.getX() || at.getY() < low.getY() || at.getZ() < low.getZ()
-                    || at.getX() > high.getX() || at.getY() > high.getY() || at.getZ() > high.getZ()) continue;
+            java.util.function.Predicate<BlockPos> near = p -> p.getX() >= low.getX() && p.getY() >= low.getY() && p.getZ() >= low.getZ()
+                    && p.getX() <= high.getX() && p.getY() <= high.getY() && p.getZ() <= high.getZ();
+            if (!near.test(at) || (mark.to().isPresent() && !near.test(mark.to().get()))) continue;
             boolean allowed = switch (mark.kind()) {
                 case PARTICLES -> rules.particles().contains(mark.id()) && com.lealex.alchyx.animation.StudioMark.particle(mark.id()) != null;
-                case FIGURE -> rules.figures().contains(mark.id());
+                case FIGURE -> mark.id() != null && rules.figures().contains(mark.id());
+                case ITEM -> com.lealex.alchyx.animation.StudioMark.DISPLAYS.contains(mark.what());
             };
             if (!allowed || !taken.add(at.immutable())) continue;
-            keptMarks.add(new com.lealex.alchyx.animation.StudioMark(at.immutable(), mark.kind(), mark.id(), Math.floorMod(mark.yaw(), 360)));
+            keptMarks.add(new com.lealex.alchyx.animation.StudioMark(at.immutable(), mark.kind(), mark.what(), Math.floorMod(mark.yaw(), 360),
+                    mark.kind() == com.lealex.alchyx.animation.StudioMark.Kind.ITEM ? mark.to().map(BlockPos::immutable) : java.util.Optional.empty()));
         }
         if (!kept.equals(motions) || !keptMarks.equals(marks)) {
             motions.clear();

@@ -179,11 +179,12 @@ public sealed interface Effect permits Effect.Particle, Effect.Sound, Effect.Blo
      * holds (always / idle / working). "speed" in degrees per tick ("working_speed" while working), "copies"
      * evenly spaced (or one per "per_items" items in the stack, at most "copies"), "radius" for orbits,
      * "scale", "bob" (up-down amplitude in blocks), "phase" (degrees added to the angle: several items sharing an
-     * orbit, e.g. 0 / 120 / 240, stay apart).
+     * orbit, e.g. 0 / 120 / 240, stay apart). "to": the item travels from "at" to there as the operation goes on
+     * (at "at" when it begins, at "to" when it ends): an ore carried from the hopper to the press.
      */
     record FloatingItem(Timing timing, String display, Target at, ItemMotion motion, float speed,
                         Optional<Float> workingSpeed, float radius, int copies, int perItems, float scale,
-                        float bob, float phase) implements Effect {
+                        float bob, float phase, Optional<Target> to) implements Effect {
         public static final MapCodec<FloatingItem> MAP_CODEC = RecordCodecBuilder.mapCodec(instance -> instance.group(
                 Timing.MAP_CODEC.forGetter(FloatingItem::timing),
                 Codec.STRING.fieldOf("display").forGetter(FloatingItem::display),
@@ -196,8 +197,16 @@ public sealed interface Effect permits Effect.Particle, Effect.Sound, Effect.Blo
                 ExtraCodecs.NON_NEGATIVE_INT.optionalFieldOf("per_items", 0).forGetter(FloatingItem::perItems),
                 Codec.FLOAT.optionalFieldOf("scale", 0.5F).forGetter(FloatingItem::scale),
                 Codec.FLOAT.optionalFieldOf("bob", 0.05F).forGetter(FloatingItem::bob),
-                Codec.FLOAT.optionalFieldOf("phase", 0.0F).forGetter(FloatingItem::phase)
+                Codec.FLOAT.optionalFieldOf("phase", 0.0F).forGetter(FloatingItem::phase),
+                Target.CODEC.optionalFieldOf("to").forGetter(FloatingItem::to)
         ).apply(instance, FloatingItem::new));
+
+        /** Where the item is between "at" and "to" at this point (0 to 1) of the operation; just "at" without "to". */
+        public static Vec3 along(Vec3 from, java.util.List<Vec3> to, float progress) {
+            if (to.isEmpty()) return from;
+            float p = Math.max(0, Math.min(1, progress));
+            return from.lerp(to.getFirst(), p);
+        }
 
         @Override
         public String type() {

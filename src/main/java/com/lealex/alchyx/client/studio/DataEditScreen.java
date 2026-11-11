@@ -9,7 +9,7 @@ import net.minecraft.client.gui.components.Tooltip;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.nbt.CompoundTag;
-import net.minecraft.nbt.NbtUtils;
+import net.minecraft.nbt.StringTag;
 import net.minecraft.nbt.TagParser;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
@@ -17,6 +17,8 @@ import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 import org.jspecify.annotations.Nullable;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.function.Consumer;
 
 /**
@@ -33,6 +35,7 @@ public class DataEditScreen extends Screen {
     private final BlockState look;
     private final Consumer<CompoundTag> done;
     private String text;
+    private CompoundTag lastGood; // the last data that read well (a mob set while the text is broken goes there)
     private @Nullable String problem;
     private @Nullable MultiLineEditBox box;
     private @Nullable EditBox mobBox;
@@ -42,7 +45,8 @@ public class DataEditScreen extends Screen {
         this.parent = parent;
         this.look = look;
         this.done = done;
-        this.text = start.isEmpty() ? "{}" : NbtUtils.prettyPrint(start, true);
+        this.text = snbt(start);
+        this.lastGood = start.copy();
     }
 
     private boolean spawner() {
@@ -98,13 +102,14 @@ public class DataEditScreen extends Screen {
             return;
         }
         CompoundTag tag = parsed();
-        if (tag == null) return;
+        if (tag == null) tag = lastGood.copy();
         CompoundTag entity = new CompoundTag();
         entity.putString("id", id.toString());
         CompoundTag spawnData = new CompoundTag();
         spawnData.put("entity", entity);
         tag.put("SpawnData", spawnData);
-        text = NbtUtils.prettyPrint(tag, true);
+        text = snbt(tag);
+        lastGood = tag.copy();
         if (box != null) box.setValue(text);
         problem = null;
     }
@@ -118,9 +123,28 @@ public class DataEditScreen extends Screen {
         return super.keyPressed(event);
     }
 
+    /**
+     * The data as text that reads back (SNBT): one top-level entry a line, each value as the game writes SNBT.
+     * (The game's "pretty" print, list[0] [] and all, is for looking at, not for reading back.)
+     */
+    private static String snbt(CompoundTag tag) {
+        if (tag.isEmpty()) return "{}";
+        StringBuilder out = new StringBuilder("{\n");
+        List<String> keys = new ArrayList<>(tag.keySet());
+        keys.sort(null);
+        for (int i = 0; i < keys.size(); i++) {
+            String key = keys.get(i);
+            out.append("  ").append(key.matches("[A-Za-z0-9._+-]+") ? key : StringTag.quoteAndEscape(key)).append(": ")
+                    .append(tag.get(key)).append(i < keys.size() - 1 ? ",\n" : "\n");
+        }
+        return out.append("}").toString();
+    }
+
     private @Nullable CompoundTag parsed() {
         try {
-            return text.isBlank() ? new CompoundTag() : TagParser.parseCompoundFully(text);
+            CompoundTag tag = text.isBlank() ? new CompoundTag() : TagParser.parseCompoundFully(text);
+            lastGood = tag.copy();
+            return tag;
         } catch (CommandSyntaxException e) {
             problem = e.getMessage();
             return null;

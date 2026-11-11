@@ -22,6 +22,11 @@ Once the machine stands, use the Recorder on any of its blocks to make that bloc
 | strike | strikes out the way it faces, like a piston, and comes back |
 | swing | swings a quarter turn like a door, waits, swings back |
 | shake | trembles in place |
+| light | lights up: furnaces, smokers, blast furnaces, campfires, candles, redstone lamps |
+| fill | fills up as the work goes on: cauldrons (with water), composters, respawn anchors |
+| open | opens: barrels, trapdoors, doors, fence gates |
+
+A piston given **strike** pushes its head out and back like a real piston. The last three only work on blocks that can do it.
 
 Sneak + use on a block stops it at once. Some machines allow only some motions, or none.
 
@@ -30,7 +35,8 @@ Sneak + use on a block stops it at once. Some machines allow only some motions, 
 Once the machine stands, use the Recorder on its **core** with no corners marked: the Machine Studio opens. It shows the machine in 3D, like a page of a guide book, but you can change it:
 
 - **Drag** to turn the view, use the **wheel** to zoom, and use the **- / +** layer buttons to hide the top layers and look inside.
-- **Click** a block to choose it. **Shift + click** adds or removes one block. **Ctrl + click** chooses every block of that kind.
+- **Blocks** tab: **click** a block to choose it. **Shift + click** adds or removes one block. **Ctrl + click** chooses every block of that kind. Pick a **motion** on the right; greyed motions are the ones those blocks can't do.
+- **Anchors** tab: click the side of a block to pick the spot in front of it (inside the build or right around it). Then choose **Particles** (smoke, flames, enchanting glyphs...) or a **Figure** (a villager, a golem, a cat...), and use **< >** to pick which one and **Turn** to turn a figure. Click an anchor to change or **Remove** it. Up to 24 anchors.
 - Pick a **motion** on the right. **Play / Pause** (or Space) previews the motions in the view, before anything changes in the world.
 - **Save** sends the motions to the machine. **Close** leaves without saving.
 
@@ -79,8 +85,10 @@ Add `free_build` to a pattern file. The grid is then just the core, so the rest 
 | `forbidden` | none | block ids or `#tags` it may never use |
 | `requires` | none | blocks it must contain: `block` (id or `#tag`), `count` (default 1), `name` (what the player reads) |
 | `formed` | `same` | `same`: the blocks become machine parts that look the same, and turn back into the blocks when the machine breaks. `keep`: they stay as they are |
-| `motions` | all | the motions players may give the blocks: `spin`, `bob`, `strike`, `swing`, `shake`. `[]`: none |
-| `motion_when` | `working` | when the motions play: `always`, `idle` or `working` |
+| `motions` | all | the motions players may give the blocks: `spin`, `bob`, `strike`, `swing`, `shake`, `light`, `fill`, `open`. `[]`: none |
+| `motion_when` | `working` | when the motions (and anchor particles) play: `always`, `idle` or `working` |
+| `particles` | a list of 22 | particle types players may put at anchors in the Machine Studio (plain particle types only). `[]`: none |
+| `figures` | a list of 20 | entity types players may stand at anchors in the Machine Studio (only drawn: no AI, no collision). `[]`: none |
 
 Blocks that can never be used: a part of another machine, another machine's core, and blocks nothing can break (bedrock, barriers).
 

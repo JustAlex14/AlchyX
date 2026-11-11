@@ -2,6 +2,7 @@ package com.lealex.alchyx.multiblock;
 
 import com.lealex.alchyx.AlchyX;
 import com.lealex.alchyx.animation.Motion;
+import com.lealex.alchyx.animation.StudioMark;
 import com.lealex.alchyx.block.entity.MultiblockCoreBlockEntity;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.RegistryFriendlyByteBuf;
@@ -15,7 +16,9 @@ import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent;
 
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.function.Consumer;
 
@@ -42,7 +45,7 @@ public final class MachineStudio {
     }
 
     /** The studio's save (client to server): every motion of the machine, by offset from the core. */
-    public record Save(BlockPos core, Map<BlockPos, Motion> motions) implements CustomPacketPayload {
+    public record Save(BlockPos core, Map<BlockPos, Motion> motions, List<StudioMark> marks) implements CustomPacketPayload {
         public static final Type<Save> TYPE = new Type<>(AlchyX.id("studio_save"));
         public static final StreamCodec<RegistryFriendlyByteBuf, Save> STREAM_CODEC = StreamCodec.of(
                 (buf, save) -> {
@@ -52,6 +55,8 @@ public final class MachineStudio {
                         BlockPos.STREAM_CODEC.encode(buf, offset);
                         buf.writeVarInt(motion.ordinal());
                     });
+                    buf.writeVarInt(save.marks().size());
+                    for (StudioMark mark : save.marks()) StudioMark.STREAM_CODEC.encode(buf, mark);
                 },
                 buf -> {
                     BlockPos core = BlockPos.STREAM_CODEC.decode(buf);
@@ -64,7 +69,11 @@ public final class MachineStudio {
                         int index = buf.readVarInt();
                         if (index >= 0 && index < all.length) motions.put(offset, all[index]);
                     }
-                    return new Save(core, motions);
+                    int markCount = buf.readVarInt();
+                    if (markCount < 0 || markCount > StudioMark.MAX * 4) throw new IllegalArgumentException("Too many anchors: " + markCount);
+                    List<StudioMark> marks = new ArrayList<>();
+                    for (int i = 0; i < markCount; i++) marks.add(StudioMark.STREAM_CODEC.decode(buf));
+                    return new Save(core, motions, marks);
                 });
 
         @Override
@@ -89,11 +98,11 @@ public final class MachineStudio {
             player.sendSystemMessage(Component.literal("You can't change this machine here"), true);
             return;
         }
-        int kept = core.setMotions(save.motions());
+        int kept = core.setStudio(save.motions(), save.marks());
         if (kept < 0) return;
-        int dropped = save.motions().size() - kept;
-        player.sendSystemMessage(Component.literal("Machine saved: " + kept + (kept == 1 ? " block moves" : " blocks move")
-                + (dropped > 0 ? " (" + dropped + " left still: this machine doesn't allow them)" : "")), true);
+        int dropped = save.motions().size() + save.marks().size() - kept;
+        player.sendSystemMessage(Component.literal("Machine saved: " + core.motions().size() + " moving blocks, " + core.marks().size() + " anchors"
+                + (dropped > 0 ? " (" + dropped + " left out: this machine doesn't allow them)" : "")), true);
         level.playSound(null, pos, SoundEvents.BOOK_PAGE_TURN, SoundSource.PLAYERS, 1.0f, 1.2f);
     }
 }

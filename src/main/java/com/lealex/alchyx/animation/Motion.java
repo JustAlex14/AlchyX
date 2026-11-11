@@ -1,7 +1,12 @@
 package com.lealex.alchyx.animation;
 
 import com.mojang.serialization.Codec;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.util.StringRepresentable;
+import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.block.state.properties.BlockStateProperties;
 import net.minecraft.world.phys.Vec3;
 
 import java.util.List;
@@ -9,8 +14,15 @@ import java.util.Map;
 import java.util.Optional;
 
 /**
- * A ready-made motion a player can give one block of a free-build machine with the Structure Recorder (no animation
- * file to write). Each one is a looping block move that hides the block and draws a moving copy of it.
+ * A ready-made motion a player can give one block of a free-build machine with the Structure Recorder or the Machine
+ * Studio (no animation file to write).
+ * <ul>
+ *   <li>Moves (spin, bob, strike, swing, shake): a looping block move that hides the block and draws a moving copy
+ *       of it. A piston strikes like a piston: its head shoots out and back, its base shows extended meanwhile.</li>
+ *   <li>Changes (light, fill, open): the block's own look changes while the machine works (or rests, as the machine
+ *       says): a furnace or campfire lights up, a cauldron or composter fills as the work goes on, a barrel or
+ *       trapdoor opens. These only fit the blocks that can do it ({@link #fits}).</li>
+ * </ul>
  */
 public enum Motion implements StringRepresentable {
     /** Turns around itself, a full turn every 2 seconds. */
@@ -25,7 +37,23 @@ public enum Motion implements StringRepresentable {
             frame(50, 0, Vec3.ZERO, 0), frame(60, 0, Vec3.ZERO, 0))),
     /** Trembles in place. */
     SHAKE("shake", "up", List.of(frame(0, 0, Vec3.ZERO, 0), frame(1, 0, new Vec3(0.04, 0, -0.03), 0),
-            frame(2, 0, new Vec3(-0.03, 0.02, 0.04), 0), frame(3, 0, new Vec3(0.03, 0, 0.02), 0), frame(4, 0, Vec3.ZERO, 0)));
+            frame(2, 0, new Vec3(-0.03, 0.02, 0.04), 0), frame(3, 0, new Vec3(0.03, 0, 0.02), 0), frame(4, 0, Vec3.ZERO, 0))),
+    /** Lights up (furnaces, smokers, campfires, candles, redstone lamps: anything that can be lit). */
+    LIGHT("light", "up", List.of()),
+    /** Fills up as the work goes on (cauldrons with water, composters, respawn anchors). */
+    FILL("fill", "up", List.of()),
+    /** Opens (barrels, trapdoors, doors, fence gates). */
+    OPEN("open", "up", List.of());
+
+    /** A piston's strike: the head shoots out, stays a moment, and comes back (see ANIMATIONS.md, block_move). */
+    private static final List<Keyframe> PISTON = List.of(
+            new Keyframe(0, 0, Vec3.ZERO, Vec3.ZERO, 1.0F, Map.of("short", "true")),
+            new Keyframe(1, 0.5F, Vec3.ZERO, Vec3.ZERO, 1.0F, Map.of("short", "false")),
+            new Keyframe(2, 1, Vec3.ZERO, Vec3.ZERO, 1.0F, Map.of()),
+            new Keyframe(6, 1, Vec3.ZERO, Vec3.ZERO, 1.0F, Map.of()),
+            new Keyframe(7.5F, 0.5F, Vec3.ZERO, Vec3.ZERO, 1.0F, Map.of("short", "true")),
+            new Keyframe(9, 0, Vec3.ZERO, Vec3.ZERO, 1.0F, Map.of()));
+    private static final int PISTON_EVERY = 30;
 
     public static final Codec<Motion> CODEC = StringRepresentable.fromEnum(Motion::values);
 
@@ -43,9 +71,57 @@ public enum Motion implements StringRepresentable {
         return new Keyframe(t, move, offset, new Vec3(0, yDegrees, 0), 1.0F, Map.of());
     }
 
-    /** The motion's keyframes, one loop. */
+    /** The motion's keyframes, one loop (none for a change of look). */
     public List<Keyframe> keyframes() {
         return keyframes;
+    }
+
+    /** Whether it moves a copy of the block (spin, bob...), rather than changing the block's own look. */
+    public boolean moves() {
+        return !keyframes.isEmpty();
+    }
+
+    /** Whether a block that looks like this can do it (moves fit any block; changes only blocks that have them). */
+    public boolean fits(BlockState look) {
+        return switch (this) {
+            case LIGHT -> look.hasProperty(BlockStateProperties.LIT);
+            case OPEN -> look.hasProperty(BlockStateProperties.OPEN);
+            case FILL -> !fillSteps(look).isEmpty();
+            default -> true;
+        };
+    }
+
+    /** Whether this block strikes as a piston (its head shoots out) rather than as a whole. */
+    public static boolean isPiston(BlockState look) {
+        return look.is(Blocks.PISTON) || look.is(Blocks.STICKY_PISTON);
+    }
+
+    /**
+     * The looks a change of look goes through, as state values (and "block" for another block), from the start of
+     * the work to its end. Empty for a move, or a block that can't do it.
+     */
+    public List<Map<String, String>> steps(BlockState look) {
+        return switch (this) {
+            case LIGHT -> fits(look) ? List.of(Map.of("lit", "true")) : List.of();
+            case OPEN -> fits(look) ? List.of(Map.of("open", "true")) : List.of();
+            case FILL -> fillSteps(look);
+            default -> List.of();
+        };
+    }
+
+    private static List<Map<String, String>> fillSteps(BlockState look) {
+        if (look.is(Blocks.CAULDRON) || look.is(Blocks.WATER_CAULDRON)) return levels(Blocks.WATER_CAULDRON, "level", 1, 3);
+        if (look.is(Blocks.POWDER_SNOW_CAULDRON)) return levels(Blocks.POWDER_SNOW_CAULDRON, "level", 1, 3);
+        if (look.is(Blocks.COMPOSTER)) return levels(Blocks.COMPOSTER, "level", 1, 8);
+        if (look.is(Blocks.RESPAWN_ANCHOR)) return levels(Blocks.RESPAWN_ANCHOR, "charge", 1, 4);
+        return List.of();
+    }
+
+    private static List<Map<String, String>> levels(Block block, String property, int from, int to) {
+        String id = BuiltInRegistries.BLOCK.getKey(block).toString();
+        List<Map<String, String>> steps = new java.util.ArrayList<>();
+        for (int level = from; level <= to; level++) steps.add(Map.of("block", id, property, Integer.toString(level)));
+        return List.copyOf(steps);
     }
 
     /** The way it moves along: "up", or "facing" (the block's facing). */
@@ -58,11 +134,35 @@ public enum Motion implements StringRepresentable {
         return id;
     }
 
-    /** The motion as an animation effect on the block named by this anchor, looping while {@code when} holds. */
-    public Effect.BlockMove effect(String anchor, Trigger when) {
+    /**
+     * The motion as an animation effect on the block named by this anchor, which looks like {@code look}, playing
+     * while {@code when} holds. Null if that block can't do it.
+     */
+    public @org.jspecify.annotations.Nullable Effect effect(String anchor, Trigger when, BlockState look) {
+        Target target = new Target(Optional.of(anchor), Optional.empty(), Map.of(), Vec3.ZERO);
+        if (!moves()) {
+            List<Map<String, String>> steps = steps(look);
+            if (steps.isEmpty()) return null;
+            return new Effect.StateSteps(new Timing(when, 1, 1.0F, 0, Map.of(), Timing.Where.EVERYWHERE), target, steps);
+        }
+        if (this == STRIKE && isPiston(look)) {
+            String head = look.is(Blocks.STICKY_PISTON) ? "sticky" : "normal";
+            Timing timing = new Timing(when, PISTON_EVERY, 1.0F, 0, Map.of(), Timing.Where.EVERYWHERE);
+            return new Effect.BlockMove(timing, target, Optional.of(new BlockLook(Blocks.PISTON_HEAD, Map.of("type", head))),
+                    "facing", true, Map.of("extended", "true"), PISTON, false);
+        }
         int loop = Math.max(1, (int) Keyframe.duration(keyframes));
         Timing timing = new Timing(when, loop, 1.0F, 0, Map.of(), Timing.Where.EVERYWHERE);
-        Target target = new Target(Optional.of(anchor), Optional.empty(), Map.of(), Vec3.ZERO);
         return new Effect.BlockMove(timing, target, Optional.empty(), direction, false, Map.of(), keyframes, true);
+    }
+
+    /** The piston strike's keyframes (the head's way out and back), for previews. */
+    public static List<Keyframe> pistonKeyframes() {
+        return PISTON;
+    }
+
+    /** How often a piston strikes, in ticks. */
+    public static int pistonEvery() {
+        return PISTON_EVERY;
     }
 }

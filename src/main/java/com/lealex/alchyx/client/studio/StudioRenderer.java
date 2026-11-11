@@ -34,7 +34,8 @@ public class StudioRenderer extends PictureInPictureRenderer<StudioRenderState> 
         FeatureRenderDispatcher features = Minecraft.getInstance().gameRenderer.getFeatureRenderDispatcher();
         CameraRenderState camera = new CameraRenderState();
         int light = LightCoordsUtil.FULL_BRIGHT;
-        Miniatures.submit(poseStack, features.getSubmitNodeStorage(), camera, state.still(), light, List.of());
+        Minecraft.getInstance().gameRenderer.getLighting().setupFor(com.mojang.blaze3d.platform.Lighting.Entry.ENTITY_IN_UI);
+        Miniatures.submit(poseStack, features.getSubmitNodeStorage(), camera, state.still(), light, state.figures());
         for (StudioRenderState.Piece piece : state.pieces()) {
             poseStack.pushPose();
             poseStack.translate(piece.at().x + 0.5, piece.at().y + 0.5, piece.at().z + 0.5);

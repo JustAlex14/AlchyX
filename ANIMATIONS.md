@@ -124,7 +124,7 @@ rest of the time the blocks look as they are.
 | Field | Default | Meaning |
 |---|---|---|
 | `targets` | required | the blocks (a block selector, an anchor or `core`) |
-| `steps` | required | a list of state values: the first shows as the operation begins, the last as it ends. One step = that look for as long as `when` holds |
+| `steps` | required | a list of state values: the first shows as the operation begins, the last as it ends. One step = that look for as long as `when` holds. A step may also name `"block"`: another block to show, keeping the state values both share, e.g. `{"block": "minecraft:water_cauldron", "level": 2}` on a plain cauldron |
 
 On a machine in the world this changes formed parts (the same way as a block move's `swap`). A core block draws
 itself, so a core that changes look does it in its own code there, and gives its file a `block_state` with

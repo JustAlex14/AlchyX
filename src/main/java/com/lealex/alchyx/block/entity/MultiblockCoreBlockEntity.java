@@ -428,6 +428,7 @@ public abstract class MultiblockCoreBlockEntity extends BlockEntity {
         }
         builtPattern = null;
         motions.clear();
+        marks.clear();
         motionsVersion++;
         setRecordedShape(null);
         return true;
@@ -436,7 +437,8 @@ public abstract class MultiblockCoreBlockEntity extends BlockEntity {
     // ---- Motions a player gave the parts of a free-build machine (animation/Motion), by offset from the core ----
 
     private final Map<BlockPos, com.lealex.alchyx.animation.Motion> motions = new java.util.LinkedHashMap<>();
-    private int motionsVersion = 0; // changes with every change of the motions (the client's animation follows it)
+    private final List<com.lealex.alchyx.animation.StudioMark> marks = new ArrayList<>(); // anchors: particles, figures
+    private int motionsVersion = 0; // changes with every change of the motions or marks (the client's animation follows it)
 
     private record MotionAt(BlockPos offset, com.lealex.alchyx.animation.Motion motion) {
         static final com.mojang.serialization.Codec<MotionAt> CODEC = com.mojang.serialization.codecs.RecordCodecBuilder.create(instance -> instance.group(
@@ -450,7 +452,12 @@ public abstract class MultiblockCoreBlockEntity extends BlockEntity {
         return java.util.Collections.unmodifiableMap(motions);
     }
 
-    /** A number that changes whenever the motions do. */
+    /** The anchors a player put with the Machine Studio (particles, figures), read only. */
+    public List<com.lealex.alchyx.animation.StudioMark> marks() {
+        return java.util.Collections.unmodifiableList(marks);
+    }
+
+    /** A number that changes whenever the motions or the anchors do. */
     public int motionsVersion() {
         return motionsVersion;
     }
@@ -467,9 +474,11 @@ public abstract class MultiblockCoreBlockEntity extends BlockEntity {
         if (!ShellParts.isPart(level.getBlockState(pos)) || !structureContains(pos)) return null;
         BlockPos offset = pos.subtract(worldPosition);
         com.lealex.alchyx.animation.Motion now = motions.get(offset), next = null;
-        if (!clear && !rules.motions().isEmpty()) {
-            int index = now == null ? -1 : rules.motions().indexOf(now);
-            next = index + 1 < rules.motions().size() ? rules.motions().get(index + 1) : null;
+        if (!clear) {
+            BlockState look = com.lealex.alchyx.block.ChamberShellBlock.lookAt(level, pos);
+            List<com.lealex.alchyx.animation.Motion> fitting = rules.motions().stream().filter(m -> m.fits(look)).toList();
+            int index = now == null ? -1 : fitting.indexOf(now);
+            next = index + 1 < fitting.size() ? fitting.get(index + 1) : null;
         }
         if (next == null) motions.remove(offset);
         else motions.put(offset, next);
@@ -480,11 +489,12 @@ public abstract class MultiblockCoreBlockEntity extends BlockEntity {
     }
 
     /**
-     * Replaces all the motions at once (the Machine Studio's save), keeping only those this machine allows and only
-     * on its formed parts. Returns how many were kept, or -1 if this isn't a formed free-build machine.
-     * Server side.
+     * Replaces all the motions and anchors at once (the Machine Studio's save), keeping only what this machine
+     * allows: motions its rules list and the block can do, on its formed parts; particles and figures its rules
+     * list, at spots in or right around the build. Returns how many motions and anchors were kept, or -1 if this
+     * isn't a formed free-build machine. Server side.
      */
-    public int setMotions(Map<BlockPos, com.lealex.alchyx.animation.Motion> wanted) {
+    public int setStudio(Map<BlockPos, com.lealex.alchyx.animation.Motion> wanted, List<com.lealex.alchyx.animation.StudioMark> wantedMarks) {
         com.lealex.alchyx.multiblock.FreeBuild rules = freeBuild();
         if (level == null || level.isClientSide() || rules == null || recordedShape == null || !formed) return -1;
         Map<BlockPos, com.lealex.alchyx.animation.Motion> kept = new java.util.LinkedHashMap<>();
@@ -492,16 +502,34 @@ public abstract class MultiblockCoreBlockEntity extends BlockEntity {
             if (entry.getValue() == null || !rules.motions().contains(entry.getValue())) continue;
             BlockPos pos = worldPosition.offset(entry.getKey());
             if (!ShellParts.isPart(level.getBlockState(pos)) || !structureContains(pos)) continue;
+            if (!entry.getValue().fits(com.lealex.alchyx.block.ChamberShellBlock.lookAt(level, pos))) continue;
             kept.put(entry.getKey().immutable(), entry.getValue());
         }
-        if (!kept.equals(motions)) {
+        BlockPos low = recordedShape.minOffset().offset(-1, -1, -1), high = recordedShape.maxOffset().offset(1, 1, 1);
+        List<com.lealex.alchyx.animation.StudioMark> keptMarks = new ArrayList<>();
+        java.util.Set<BlockPos> taken = new java.util.HashSet<>();
+        for (com.lealex.alchyx.animation.StudioMark mark : wantedMarks) {
+            if (keptMarks.size() >= com.lealex.alchyx.animation.StudioMark.MAX) break;
+            BlockPos at = mark.offset();
+            if (at.getX() < low.getX() || at.getY() < low.getY() || at.getZ() < low.getZ()
+                    || at.getX() > high.getX() || at.getY() > high.getY() || at.getZ() > high.getZ()) continue;
+            boolean allowed = switch (mark.kind()) {
+                case PARTICLES -> rules.particles().contains(mark.id()) && com.lealex.alchyx.animation.StudioMark.particle(mark.id()) != null;
+                case FIGURE -> rules.figures().contains(mark.id());
+            };
+            if (!allowed || !taken.add(at.immutable())) continue;
+            keptMarks.add(new com.lealex.alchyx.animation.StudioMark(at.immutable(), mark.kind(), mark.id(), Math.floorMod(mark.yaw(), 360)));
+        }
+        if (!kept.equals(motions) || !keptMarks.equals(marks)) {
             motions.clear();
             motions.putAll(kept);
+            marks.clear();
+            marks.addAll(keptMarks);
             motionsVersion++;
             setChanged();
             syncToClients();
         }
-        return kept.size();
+        return kept.size() + keptMarks.size();
     }
 
     private void setRecordedShape(@Nullable MultiblockPattern shape) {
@@ -985,6 +1013,7 @@ public abstract class MultiblockCoreBlockEntity extends BlockEntity {
             motions.forEach((offset, motion) -> list.add(new MotionAt(offset, motion)));
             output.store("alchyx_motions", MotionAt.CODEC.listOf(), list);
         }
+        if (!marks.isEmpty()) output.store("alchyx_marks", com.lealex.alchyx.animation.StudioMark.CODEC.listOf(), List.copyOf(marks));
     }
 
     private static final com.mojang.serialization.Codec<Map<String, Integer>> LEVELS_CODEC =
@@ -1020,9 +1049,13 @@ public abstract class MultiblockCoreBlockEntity extends BlockEntity {
         }
         Map<BlockPos, com.lealex.alchyx.animation.Motion> read = new java.util.LinkedHashMap<>();
         input.read("alchyx_motions", MotionAt.CODEC.listOf()).ifPresent(list -> list.forEach(at -> read.put(at.offset(), at.motion())));
-        if (!read.equals(motions)) {
+        List<com.lealex.alchyx.animation.StudioMark> readMarks = input.read("alchyx_marks",
+                com.lealex.alchyx.animation.StudioMark.CODEC.listOf()).orElse(List.of());
+        if (!read.equals(motions) || !readMarks.equals(marks)) {
             motions.clear();
             motions.putAll(read);
+            marks.clear();
+            marks.addAll(readMarks);
             motionsVersion++;
         }
     }

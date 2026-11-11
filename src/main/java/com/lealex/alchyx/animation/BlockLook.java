@@ -35,6 +35,20 @@ public record BlockLook(Block block, Map<String, String> state) {
 
     /** The state with these property values set (by name; unknown names or values are skipped). */
     public static BlockState apply(BlockState state, Map<String, String> values) {
+        // "block": another block, keeping the state values both have (a cauldron that becomes a water cauldron)
+        String other = values.get("block");
+        if (other != null) {
+            net.minecraft.resources.Identifier id = net.minecraft.resources.Identifier.tryParse(other);
+            Block block = id == null ? null : net.minecraft.core.registries.BuiltInRegistries.BLOCK.getOptional(id).orElse(null);
+            if (block != null && block != state.getBlock()) {
+                BlockState swapped = block.defaultBlockState();
+                for (Property<?> property : state.getProperties()) {
+                    Property<?> same = block.getStateDefinition().getProperty(property.getName());
+                    if (same != null) swapped = withValue(swapped, same, valueName(state, property));
+                }
+                state = swapped;
+            }
+        }
         for (Map.Entry<String, String> entry : values.entrySet()) {
             Property<?> property = state.getBlock().getStateDefinition().getProperty(entry.getKey());
             if (property != null) state = withValue(state, property, entry.getValue());

@@ -3,6 +3,9 @@ package com.lealex.alchyx.client.animation;
 import com.lealex.alchyx.animation.Effect;
 import com.lealex.alchyx.animation.Motion;
 import com.lealex.alchyx.animation.ResolvedAnimation;
+import com.lealex.alchyx.animation.StudioMark;
+import com.lealex.alchyx.block.ChamberShellBlock;
+import net.minecraft.world.level.block.state.BlockState;
 import com.lealex.alchyx.block.entity.MultiblockCoreBlockEntity;
 import com.lealex.alchyx.multiblock.FreeBuild;
 import com.lealex.alchyx.multiblock.MultiblockPattern;
@@ -19,7 +22,7 @@ import java.util.WeakHashMap;
 /**
  * The animation a free-build machine plays (client): its file's effects, measured in the box its player recorded
  * (written as it stands in the world, so no turning), plus a looping block move for each motion its player gave a
- * part. Built again only when the file, the shape or the motions change, so the engine keeps its runtime meanwhile.
+ * part, plus the particles and figures at the anchors its player put. Built again only when the file, the shape or the motions change, so the engine keeps its runtime meanwhile.
  */
 final class Motions {
     private Motions() {}
@@ -43,8 +46,20 @@ final class Motions {
         int n = 0;
         for (Map.Entry<BlockPos, Motion> entry : core.motions().entrySet()) {
             String anchor = "alchyx_motion_" + n++;
+            BlockState look = core.getLevel() == null ? null
+                    : ChamberShellBlock.lookAt(core.getLevel(), core.getBlockPos().offset(entry.getKey()));
+            Effect effect = look == null ? null : entry.getValue().effect(anchor, when, look);
+            if (effect == null) continue;
             anchors.put(anchor, entry.getKey());
-            effects.add(entry.getValue().effect(anchor, when));
+            effects.add(effect);
+        }
+        n = 0;
+        for (StudioMark mark : core.marks()) {
+            String anchor = "alchyx_mark_" + n++;
+            Effect effect = mark.effect(anchor, when);
+            if (effect == null) continue;
+            anchors.put(anchor, mark.offset());
+            effects.add(effect);
         }
         ResolvedAnimation resolved = effects.isEmpty() ? null : new ResolvedAnimation(core.patternId(), Optional.empty(), anchors,
                 shape.minOffset(), shape.maxOffset(), List.copyOf(effects));

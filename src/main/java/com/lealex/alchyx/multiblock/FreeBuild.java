@@ -43,11 +43,27 @@ import java.util.Set;
  *   <li>{@code motions}: the motions ({@link Motion}) players may give the parts with the Recorder. Default: all of
  *       them; an empty list: none. {@code motion_when} (default {@code "working"}): when they play
  *       ({@code always}, {@code idle} or {@code working}).</li>
+ *   <li>{@code particles} and {@code figures}: the particle types and entity types players may put at anchors with
+ *       the Machine Studio. Defaults: {@link #DEFAULT_PARTICLES}, {@link #DEFAULT_FIGURES}; an empty list: none.</li>
  * </ul>
  * The pattern file still needs its usual one-cell grid with the core, so the rest of AlchyX knows the machine.
  */
 public record FreeBuild(int maxWidth, int maxHeight, int minBlocks, List<BlockMatch> allowed, List<BlockMatch> forbidden,
-                        List<Requirement> requires, Formed formed, List<Motion> motions, Trigger motionWhen) {
+                        List<Requirement> requires, Formed formed, List<Motion> motions, Trigger motionWhen,
+                        List<Identifier> particles, List<Identifier> figures) {
+
+    /** The particles players may put at anchors with the Machine Studio, unless a file says otherwise. */
+    public static final List<Identifier> DEFAULT_PARTICLES = ids("smoke", "large_smoke", "campfire_cosy_smoke", "flame",
+            "soul_fire_flame", "small_flame", "enchant", "portal", "end_rod", "electric_spark", "happy_villager", "witch",
+            "cloud", "bubble_pop", "dripping_water", "dripping_lava", "glow", "wax_on", "white_ash", "note", "heart", "crit");
+    /** The entities players may stand at anchors with the Machine Studio, unless a file says otherwise. */
+    public static final List<Identifier> DEFAULT_FIGURES = ids("villager", "wandering_trader", "witch", "iron_golem",
+            "snow_golem", "allay", "cat", "wolf", "fox", "parrot", "chicken", "bee", "axolotl", "frog", "armor_stand",
+            "zombie", "skeleton", "piglin", "blaze", "enderman");
+
+    private static List<Identifier> ids(String... names) {
+        return java.util.Arrays.stream(names).map(Identifier::withDefaultNamespace).toList();
+    }
 
     /** No box may be larger than this along any axis, whatever a file says (block change lookups stay cheap). */
     public static final int HARD_LIMIT = 32;
@@ -120,7 +136,9 @@ public record FreeBuild(int maxWidth, int maxHeight, int minBlocks, List<BlockMa
             Motion.CODEC.listOf().optionalFieldOf("motions", List.of(Motion.values())).forGetter(FreeBuild::motions),
             Trigger.CODEC.validate(when -> when.continuous() ? com.mojang.serialization.DataResult.success(when)
                             : com.mojang.serialization.DataResult.error(() -> "motion_when must be always, idle or working"))
-                    .optionalFieldOf("motion_when", Trigger.WORKING).forGetter(FreeBuild::motionWhen)
+                    .optionalFieldOf("motion_when", Trigger.WORKING).forGetter(FreeBuild::motionWhen),
+            Identifier.CODEC.listOf().optionalFieldOf("particles", DEFAULT_PARTICLES).forGetter(FreeBuild::particles),
+            Identifier.CODEC.listOf().optionalFieldOf("figures", DEFAULT_FIGURES).forGetter(FreeBuild::figures)
     ).apply(instance, FreeBuild::new));
 
     /** The rules in a few words, for the Recorder's message: "Up to 7 wide and 7 high. Needs 6 Glass, 1 Cauldron." */

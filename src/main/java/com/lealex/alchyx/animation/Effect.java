@@ -182,13 +182,16 @@ public sealed interface Effect permits Effect.Particle, Effect.Sound, Effect.Blo
      * orbit, e.g. 0 / 120 / 240, stay apart). "to": the item travels from "at" to there as the operation goes on
      * (at "at" when it begins, at "to" when it ends): an ore carried from the hopper to the press. "travel"
      * ([from, until], fractions of the operation, default [0, 1]): when it leaves "at" and when it reaches "to".
+     * "items": item ids shown in turn through the operation (or its "between"), instead of a display: stone, then
+     * cobblestone, then gravel. Then "display" may be left out.
      */
     record FloatingItem(Timing timing, String display, Target at, ItemMotion motion, float speed,
                         Optional<Float> workingSpeed, float radius, int copies, int perItems, float scale,
-                        float bob, float phase, Optional<Target> to, List<Float> travel) implements Effect {
-        public static final MapCodec<FloatingItem> MAP_CODEC = RecordCodecBuilder.mapCodec(instance -> instance.group(
+                        float bob, float phase, Optional<Target> to, List<Float> travel,
+                        List<net.minecraft.world.item.Item> items) implements Effect {
+        public static final MapCodec<FloatingItem> MAP_CODEC = RecordCodecBuilder.<FloatingItem>mapCodec(instance -> instance.group(
                 Timing.MAP_CODEC.forGetter(FloatingItem::timing),
-                Codec.STRING.fieldOf("display").forGetter(FloatingItem::display),
+                Codec.STRING.optionalFieldOf("display", "").forGetter(FloatingItem::display),
                 Target.CODEC.optionalFieldOf("at", Target.CORE).forGetter(FloatingItem::at),
                 ItemMotion.CODEC.optionalFieldOf("motion", ItemMotion.SPIN).forGetter(FloatingItem::motion),
                 Codec.FLOAT.optionalFieldOf("speed", 1.0F).forGetter(FloatingItem::speed),
@@ -200,8 +203,23 @@ public sealed interface Effect permits Effect.Particle, Effect.Sound, Effect.Blo
                 Codec.FLOAT.optionalFieldOf("bob", 0.05F).forGetter(FloatingItem::bob),
                 Codec.FLOAT.optionalFieldOf("phase", 0.0F).forGetter(FloatingItem::phase),
                 Target.CODEC.optionalFieldOf("to").forGetter(FloatingItem::to),
-                Codec.floatRange(0.0F, 1.0F).listOf(2, 2).optionalFieldOf("travel", List.of(0.0F, 1.0F)).forGetter(FloatingItem::travel)
-        ).apply(instance, FloatingItem::new));
+                Codec.floatRange(0.0F, 1.0F).listOf(2, 2).optionalFieldOf("travel", List.of(0.0F, 1.0F)).forGetter(FloatingItem::travel),
+                net.minecraft.core.registries.BuiltInRegistries.ITEM.byNameCodec().listOf(0, 64).optionalFieldOf("items", List.of())
+                        .forGetter(FloatingItem::items)
+        ).apply(instance, FloatingItem::new)).validate(i -> !i.display.isEmpty() || !i.items.isEmpty() ? DataResult.success(i)
+                : DataResult.error(() -> "an item effect needs \"display\" or \"items\""));
+
+        /**
+         * The stack shown now: from "items", the one this point (0 to 1) of the operation has reached (through
+         * "between" if set), else {@code display} (what the machine's display holds).
+         */
+        public net.minecraft.world.item.ItemStack shown(java.util.function.Supplier<net.minecraft.world.item.ItemStack> display, float progress) {
+            if (items.isEmpty()) return display.get();
+            float span = timing().until() - timing().from();
+            float local = span < 1e-4F ? 1 : (progress - timing().from()) / span;
+            int index = Math.max(0, Math.min(items.size() - 1, (int) (local * items.size())));
+            return new net.minecraft.world.item.ItemStack(items.get(index));
+        }
 
         /** Where the item is between "at" and "to" at this point (0 to 1) of the operation; just "at" without "to". */
         public Vec3 along(Vec3 from, List<Vec3> to, float progress) {

@@ -47,6 +47,14 @@ public class StudioRenderer extends PictureInPictureRenderer<StudioRenderState> 
             Miniatures.submit(poseStack, features.getSubmitNodeStorage(), camera, piece.mesh(), light, List.of());
             poseStack.popPose();
         }
+        for (StudioRenderState.ItemPiece item : state.items()) {
+            poseStack.pushPose();
+            poseStack.translate(item.at().x, item.at().y, item.at().z);
+            poseStack.mulPose(Axis.YP.rotationDegrees(item.yaw()));
+            poseStack.scale(item.size(), item.size(), item.size());
+            item.item().submit(poseStack, features.getSubmitNodeStorage(), light, net.minecraft.client.renderer.texture.OverlayTexture.NO_OVERLAY, 0);
+            poseStack.popPose();
+        }
         features.renderAllFeatures();
     }
 

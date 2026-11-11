@@ -427,7 +427,7 @@ public final class MiniatureAnimation {
     private void item(Frame frame, ClientLevel level, Effect.FloatingItem item, int index, State state, boolean working, float time) {
         Trigger when = item.timing().when();
         if (when.continuous() ? !when.holds(working) : !working) return;
-        ItemStack stack = state.display(item.display());
+        ItemStack stack = item.shown(() -> state.display(item.display()), state.progress());
         if (stack.isEmpty()) return;
         ItemStackRenderState render = new ItemStackRenderState();
         Minecraft.getInstance().getItemModelResolver().updateForTopItem(render, stack, ItemDisplayContext.GROUND, level, null, index);

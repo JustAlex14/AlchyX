@@ -112,7 +112,9 @@ public class StudioScreen extends Screen {
     private final List<@Nullable Motion> motionChoices = new ArrayList<>();
     private final List<Button> anchorButtons = new ArrayList<>();
     private @Nullable Button particlesButton, figureButton, itemButton, removeButton, previousButton, nextButton, turnButton;
-    private @Nullable Button appearButton, vanishButton, leaveButton, arriveButton, alwaysButton;
+    private @Nullable Button appearButton, vanishButton, leaveButton, arriveButton, alwaysButton, addItemButton;
+    private net.minecraft.client.gui.components.@Nullable EditBox itemBox;
+    private static final int ITEMS_TOP_ROWS = 8; // the item list's row, counted in ROWs under LIST_TOP (+ a little)
 
     public StudioScreen(MultiblockCoreBlockEntity core) {
         super(Component.literal("Machine Studio"));
@@ -241,8 +243,15 @@ public class StudioScreen extends Screen {
         py += ROW;
         alwaysButton = addRenderableWidget(Button.builder(Component.literal("Reset times"), b -> retime(-1)).bounds(px, py, wide, 18).build());
         alwaysButton.setTooltip(Tooltip.create(Component.literal("Shows all the time, travels through the whole work")));
+        // The items an item anchor goes through: typed in, best match added with Enter or +
+        py += ROW + 4;
+        itemBox = addRenderableWidget(new net.minecraft.client.gui.components.EditBox(font, px + 18, py, wide - 40, 18, Component.literal("Item")));
+        itemBox.setHint(Component.literal("stone, gravel..."));
+        itemBox.setMaxLength(64);
+        addItemButton = addRenderableWidget(Button.builder(Component.literal("+"), b -> addTypedItem()).bounds(px + wide - 18, py, 18, 18).build());
+        addItemButton.setTooltip(Tooltip.create(Component.literal("Add this item: the anchor shows its items one after another through the work")));
         anchorButtons.addAll(List.of(particlesButton, figureButton, itemButton, previousButton, nextButton, turnButton, removeButton,
-                appearButton, vanishButton, leaveButton, arriveButton, alwaysButton));
+                appearButton, vanishButton, leaveButton, arriveButton, alwaysButton, addItemButton));
         refreshButtons();
     }
 
@@ -314,6 +323,12 @@ public class StudioScreen extends Screen {
         boolean travels = mark != null && mark.kind() == StudioMark.Kind.ITEM && mark.to().isPresent();
         for (Button button : new Button[] {appearButton, vanishButton, alwaysButton}) if (button != null) button.active = mark != null;
         for (Button button : new Button[] {leaveButton, arriveButton}) if (button != null) button.active = travels;
+        boolean itemMark = mark != null && mark.kind() == StudioMark.Kind.ITEM;
+        if (itemBox != null) itemBox.visible = !blocks && itemMark;
+        if (addItemButton != null) {
+            addItemButton.visible = !blocks && itemMark;
+            addItemButton.active = itemMark && mark.items().size() < StudioMark.MAX_ITEMS;
+        }
         if (turnButton != null) {
             boolean item = mark != null && mark.kind() == StudioMark.Kind.ITEM;
             turnButton.active = mark != null && mark.kind() != StudioMark.Kind.PARTICLES;
@@ -398,6 +413,39 @@ public class StudioScreen extends Screen {
         refreshButtons();
     }
 
+    /** The item that best matches what is typed: the same id or name, else the shortest that starts with it, else contains it. */
+    private static net.minecraft.world.item.@Nullable Item match(String typed) {
+        String text = typed.trim().toLowerCase(Locale.ROOT).replace(' ', '_');
+        if (text.isEmpty()) return null;
+        Identifier exact = Identifier.tryParse(text.contains(":") ? text : "minecraft:" + text);
+        if (exact != null && BuiltInRegistries.ITEM.containsKey(exact)) return BuiltInRegistries.ITEM.getValue(exact);
+        net.minecraft.world.item.Item starts = null, contains = null;
+        for (Identifier id : BuiltInRegistries.ITEM.keySet()) {
+            String path = id.getPath();
+            net.minecraft.world.item.Item item = BuiltInRegistries.ITEM.getValue(id);
+            if (item == net.minecraft.world.item.Items.AIR) continue;
+            if (path.startsWith(text) && (starts == null || path.length() < BuiltInRegistries.ITEM.getKey(starts).getPath().length())) starts = item;
+            else if (path.contains(text) && (contains == null || path.length() < BuiltInRegistries.ITEM.getKey(contains).getPath().length())) contains = item;
+        }
+        return starts != null ? starts : contains;
+    }
+
+    private void addTypedItem() {
+        StudioMark mark = spot == null ? null : marks.get(spot);
+        if (mark == null || mark.kind() != StudioMark.Kind.ITEM || itemBox == null) return;
+        net.minecraft.world.item.Item item = match(itemBox.getValue());
+        if (item == null || mark.items().size() >= StudioMark.MAX_ITEMS) return;
+        List<Identifier> items = new ArrayList<>(mark.items());
+        items.add(BuiltInRegistries.ITEM.getKey(item));
+        marks.put(spot, mark.withItems(items));
+        itemBox.setValue("");
+        refreshButtons();
+    }
+
+    /** Where the item list's icons start, and how many go in a row. */
+    private int itemsY() { return LIST_TOP + ITEMS_TOP_ROWS * ROW + 2; } // (under the item box)
+    private static final int ICONS_PER_ROW = 7;
+
     private void layers(int change) {
         top = Mth.clamp(top + change, 0, size.getY() - 1);
         stillDirty = true;
@@ -465,6 +513,18 @@ public class StudioScreen extends Screen {
         return StudioView.pick(x - (viewX0() + viewX1()) / 2.0, y - (viewY0() + viewY1()) / 2.0, scale(), yaw, pitch, center(), shown);
     }
 
+    /** The item list's icon under the mouse (its index), or -1. */
+    private int iconUnder(double x, double y) {
+        StudioMark mark = tab == Tab.ANCHORS && spot != null ? marks.get(spot) : null;
+        if (mark == null || mark.kind() != StudioMark.Kind.ITEM) return -1;
+        int left = panelX() + 5, top = itemsY();
+        if (x < left || y < top) return -1;
+        int column = (int) ((x - left) / 18), row = (int) ((y - top) / 18);
+        if (column >= ICONS_PER_ROW) return -1;
+        int index = row * ICONS_PER_ROW + column;
+        return index < mark.items().size() ? index : -1;
+    }
+
     // The work bar along the bottom of the view: the pretend operation's progress, held to scrub through it
     private boolean onBar(double x, double y) {
         return x >= viewX0() + 4 && x < viewX1() - 4 && y >= viewY1() - 9 && y < viewY1();
@@ -482,6 +542,15 @@ public class StudioScreen extends Screen {
 
     @Override
     public boolean mouseClicked(MouseButtonEvent event, boolean doubleClick) {
+        int icon = iconUnder(event.x(), event.y());
+        if (icon >= 0 && event.button() == 0) {
+            StudioMark mark = marks.get(spot);
+            List<Identifier> items = new ArrayList<>(mark.items());
+            items.remove(icon);
+            marks.put(spot, mark.withItems(items));
+            refreshButtons();
+            return true;
+        }
         if (event.button() == 0 && onBar(event.x(), event.y())) {
             scrubbing = true;
             if (playing) {
@@ -492,6 +561,7 @@ public class StudioScreen extends Screen {
             return true;
         }
         if (event.button() == 0 && inView(event.x(), event.y())) {
+            setFocused(null); // (the item box lets go of the keys)
             dragging = true;
             dragged = 0;
             return true;
@@ -591,6 +661,13 @@ public class StudioScreen extends Screen {
 
     @Override
     public boolean keyPressed(KeyEvent event) {
+        if (itemBox != null && itemBox.isFocused() && itemBox.visible) {
+            if (event.key() == 257 || event.key() == 335) { // enter: add the item typed
+                addTypedItem();
+                return true;
+            }
+            if (!event.isEscape()) return itemBox.keyPressed(event) || true;
+        }
         if (event.key() == 32) { // space: play / pause
             playing = !playing;
             stillDirty = true;
@@ -613,7 +690,7 @@ public class StudioScreen extends Screen {
         int x0 = viewX0(), y0 = viewY0(), x1 = viewX1(), y1 = viewY1();
         graphics.fill(x0 - 1, y0 - 1, x1 + 1, y1 + 1, EDGE);
         graphics.fill(x0, y0, x1, y1, VIEW_BACK);
-        graphics.submitPictureInPictureRenderState(new StudioRenderState(stillMesh(), pieces(a), figures(a), center(), yaw, pitch,
+        graphics.submitPictureInPictureRenderState(new StudioRenderState(stillMesh(), pieces(a), figures(a), items(a), center(), yaw, pitch,
                 x0, y0, x1, y1, scale(), graphics.peekScissorStack()));
 
         // Header
@@ -669,6 +746,9 @@ public class StudioScreen extends Screen {
     private static String shortName(StudioMark mark) {
         Identifier id = mark.kind() == StudioMark.Kind.ITEM ? null : mark.id();
         String name = id == null ? mark.what() : id.getPath();
+        if (mark.kind() == StudioMark.Kind.ITEM && !mark.items().isEmpty()) {
+            name = mark.items().size() == 1 ? mark.items().getFirst().getPath() : mark.items().size() + " items in turn";
+        }
         return name.replace('_', ' ') + (mark.to().isPresent() ? ", travels" : "");
     }
 
@@ -723,9 +803,29 @@ public class StudioScreen extends Screen {
                     : "Shows " + mark.times().showFrom() + "% to " + mark.times().showUntil() + "%";
             graphics.text(font, when, tx, y, mark == null ? FAINT : TEXT, false);
             y = LIST_TOP + 6 * ROW + 14;
-            if (mark != null && mark.kind() == StudioMark.Kind.ITEM && mark.to().isPresent()) {
-                graphics.text(font, "Travels " + mark.times().leave() + "% to " + mark.times().arrive() + "%", tx, y, TEXT, false);
-                y += 12;
+            if (mark != null && mark.kind() == StudioMark.Kind.ITEM) {
+                if (itemBox != null) { // the best match for what is typed, by the box
+                    net.minecraft.world.item.Item match = match(itemBox.getValue());
+                    if (match != null) graphics.item(new net.minecraft.world.item.ItemStack(match), px + 4, itemBox.getY() + 1);
+                }
+                int top = itemsY();
+                for (int i = 0; i < mark.items().size(); i++) {
+                    int ix = tx + (i % ICONS_PER_ROW) * 18, iy = top + (i / ICONS_PER_ROW) * 18;
+                    graphics.fill(ix - 1, iy - 1, ix + 17, iy + 17, EDGE);
+                    BuiltInRegistries.ITEM.getOptional(mark.items().get(i))
+                            .ifPresent(item -> graphics.item(new net.minecraft.world.item.ItemStack(item), ix, iy));
+                    if (i < mark.items().size() - 1 && (i + 1) % ICONS_PER_ROW != 0) graphics.text(font, ">", ix + 17, iy + 4, FAINT, false);
+                }
+                y = top + Math.max(1, (mark.items().size() + ICONS_PER_ROW - 1) / ICONS_PER_ROW) * 18 + 4;
+                if (mark.items().isEmpty()) graphics.text(font, "No items: shows its display", tx, top + 4, FAINT, false);
+                if (mark.to().isPresent()) {
+                    graphics.text(font, "Travels " + mark.times().leave() + "% to " + mark.times().arrive() + "%", tx, y, TEXT, false);
+                    y += 12;
+                }
+                if (!mark.items().isEmpty()) {
+                    graphics.text(font, "Click an item: remove it", tx, y, FAINT, false);
+                    y += 12;
+                }
             }
             help = List.of("Click a side of a block:", "the spot in front of it", "Then particles, a figure", "or an item",
                     "Click an anchor: change it", "Drag the work bar, then", "Appear / Vanish here", "Hide layers to reach inside");
@@ -841,13 +941,15 @@ public class StudioScreen extends Screen {
                 for (int i = 1; i < dots; i++) {
                     pieces.add(new StudioRenderState.Piece(pieceMesh(PATH_MARK), from.lerp(to, i / (double) dots), Vec3.ZERO, 0.1F));
                 }
-                if (shown) {
+                if (shown && mark.items().isEmpty()) {
                     pieces.add(new StudioRenderState.Piece(pieceMesh(ITEM_MARK), from.lerp(to, mark.times().travel(progress)),
                             new Vec3(0, time * 3, 0), 0.3F));
                 }
             } else {
                 float bob = playing ? (float) Math.sin(time / 10.0) * 0.05F : 0;
-                if (shown) pieces.add(new StudioRenderState.Piece(pieceMesh(ITEM_MARK), from.add(0, bob, 0), new Vec3(0, time * 3, 0), 0.3F));
+                if (shown && mark.items().isEmpty()) {
+                    pieces.add(new StudioRenderState.Piece(pieceMesh(ITEM_MARK), from.add(0, bob, 0), new Vec3(0, time * 3, 0), 0.3F));
+                }
             }
         }
         if (tab == Tab.ANCHORS) {
@@ -858,6 +960,31 @@ public class StudioScreen extends Screen {
             }
         }
         return pieces;
+    }
+
+    /** The items of item anchors that name them, as they show now (an anchor showing a display gets a stand-in cube). */
+    private List<StudioRenderState.ItemPiece> items(float partialTicks) {
+        ClientLevel level = Minecraft.getInstance().level;
+        if (level == null) return List.of();
+        List<StudioRenderState.ItemPiece> items = new ArrayList<>();
+        float progress = progress(partialTicks), time = clock + (playing ? partialTicks : 0);
+        for (StudioMark mark : marks.values()) {
+            if (mark.kind() != StudioMark.Kind.ITEM || mark.items().isEmpty() || mark.offset().getY() > top || !mark.times().shows(progress)) continue;
+            // Which item: the one this point of its showing time has reached, like on the machine
+            float from = mark.times().showFrom() / 100.0F, until = mark.times().showUntil() / 100.0F;
+            float local = until - from < 1e-4F ? 1 : (progress - from) / (until - from);
+            int index = Mth.clamp((int) (local * mark.items().size()), 0, mark.items().size() - 1);
+            net.minecraft.world.item.Item item = BuiltInRegistries.ITEM.getOptional(mark.items().get(index)).orElse(null);
+            if (item == null) continue;
+            net.minecraft.client.renderer.item.ItemStackRenderState state = new net.minecraft.client.renderer.item.ItemStackRenderState();
+            Minecraft.getInstance().getItemModelResolver().updateForTopItem(state, new net.minecraft.world.item.ItemStack(item),
+                    net.minecraft.world.item.ItemDisplayContext.GROUND, level, null, index);
+            Vec3 at = Vec3.atCenterOf(mark.offset());
+            if (mark.to().isPresent()) at = at.lerp(Vec3.atCenterOf(mark.to().get()), mark.times().travel(progress));
+            else at = at.add(0, playing ? Math.sin(time / 10.0) * 0.05 : 0, 0);
+            items.add(new StudioRenderState.ItemPiece(state, at.add(0, -0.25, 0), mark.to().isPresent() ? 0 : time * 4, 1.0F));
+        }
+        return items;
     }
 
     /** The spot a click would pick now (Anchors tab), to show it. */

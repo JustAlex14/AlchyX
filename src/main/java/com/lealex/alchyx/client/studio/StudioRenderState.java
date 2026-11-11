@@ -14,7 +14,7 @@ import java.util.List;
  * block as its own small mesh with where it is now, the figures standing at anchors, and the marks over the chosen blocks. Positions are in the
  * view's own units (one per block), turned by {@code yaw} and {@code pitch} around {@code center}.
  */
-public record StudioRenderState(BoxMesh still, List<Piece> pieces, List<Puppets.Prepared> figures, Vec3 center, float yaw, float pitch,
+public record StudioRenderState(BoxMesh still, List<Piece> pieces, List<Puppets.Prepared> figures, List<ItemPiece> items, Vec3 center, float yaw, float pitch,
                                 int x0, int y0, int x1, int y1, float scale,
                                 @Nullable ScreenRectangle scissorArea, @Nullable ScreenRectangle bounds)
         implements PictureInPictureRenderState {
@@ -25,9 +25,12 @@ public record StudioRenderState(BoxMesh still, List<Piece> pieces, List<Puppets.
      */
     public record Piece(BoxMesh mesh, Vec3 at, Vec3 rotation, float size) {}
 
-    public StudioRenderState(BoxMesh still, List<Piece> pieces, List<Puppets.Prepared> figures, Vec3 center, float yaw, float pitch,
-                             int x0, int y0, int x1, int y1, float scale, @Nullable ScreenRectangle scissorArea) {
-        this(still, pieces, figures, center, yaw, pitch, x0, y0, x1, y1, scale, scissorArea,
+    /** An item floating at an anchor: where its middle is, its turn around up (degrees) and its size. */
+    public record ItemPiece(net.minecraft.client.renderer.item.ItemStackRenderState item, Vec3 at, float yaw, float size) {}
+
+    public StudioRenderState(BoxMesh still, List<Piece> pieces, List<Puppets.Prepared> figures, List<ItemPiece> items, Vec3 center,
+                             float yaw, float pitch, int x0, int y0, int x1, int y1, float scale, @Nullable ScreenRectangle scissorArea) {
+        this(still, pieces, figures, items, center, yaw, pitch, x0, y0, x1, y1, scale, scissorArea,
                 PictureInPictureRenderState.getBounds(x0, y0, x1, y1, scissorArea));
     }
 }

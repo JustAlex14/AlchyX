@@ -129,7 +129,8 @@ public final class AnimationEngine {
 
     /** The core's runtime, rebuilt when new definitions arrive; null if its machine has no animation file. */
     private static @Nullable Runtime runtime(ClientLevel level, MultiblockCoreBlockEntity core) {
-        ResolvedAnimation def = ClientAnimations.get(core.patternId());
+        // A free-build machine: its recorded box, plus the motions its player gave its blocks
+        ResolvedAnimation def = Motions.resolve(core, ClientAnimations.get(core.patternId()));
         Runtime runtime = RUNTIMES.get(core);
         if (runtime != null && (runtime.def != def || runtime.generation != ClientAnimations.generation())) {
             clearMoves(level, runtime);
@@ -201,7 +202,10 @@ public final class AnimationEngine {
         }
         rt.moves.removeIf(move -> {
             if (now - move.start() <= Keyframe.duration(move.effect().keyframes())) return false;
-            if (level.getBlockEntity(move.pos()) instanceof ChamberShellBlockEntity shell) shell.setClientLook(null);
+            if (level.getBlockEntity(move.pos()) instanceof ChamberShellBlockEntity shell) {
+                shell.setClientLook(null);
+                if (move.effect().hide()) shell.setClientHidden(false);
+            }
             return true;
         });
     }
@@ -294,12 +298,16 @@ public final class AnimationEngine {
             if (!move.swap().isEmpty() && level.getBlockEntity(pos) instanceof ChamberShellBlockEntity shell) {
                 shell.setClientLook(BlockLook.apply(shell.getDisguise(), move.swap()));
             }
+            if (move.hide() && level.getBlockEntity(pos) instanceof ChamberShellBlockEntity shell) shell.setClientHidden(true);
         }
     }
 
     private static void clearMoves(ClientLevel level, Runtime rt) {
         for (Move move : rt.moves) {
-            if (level.getBlockEntity(move.pos()) instanceof ChamberShellBlockEntity shell) shell.setClientLook(null);
+            if (level.getBlockEntity(move.pos()) instanceof ChamberShellBlockEntity shell) {
+                shell.setClientLook(null);
+                if (move.effect().hide()) shell.setClientHidden(false);
+            }
         }
         rt.moves.clear();
     }

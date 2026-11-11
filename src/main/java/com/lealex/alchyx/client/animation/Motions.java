@@ -1,0 +1,58 @@
+package com.lealex.alchyx.client.animation;
+
+import com.lealex.alchyx.animation.Effect;
+import com.lealex.alchyx.animation.Motion;
+import com.lealex.alchyx.animation.ResolvedAnimation;
+import com.lealex.alchyx.block.entity.MultiblockCoreBlockEntity;
+import com.lealex.alchyx.multiblock.FreeBuild;
+import com.lealex.alchyx.multiblock.MultiblockPattern;
+import net.minecraft.core.BlockPos;
+import org.jspecify.annotations.Nullable;
+
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.WeakHashMap;
+
+/**
+ * The animation a free-build machine plays (client): its file's effects, measured in the box its player recorded
+ * (written as it stands in the world, so no turning), plus a looping block move for each motion its player gave a
+ * part. Built again only when the file, the shape or the motions change, so the engine keeps its runtime meanwhile.
+ */
+final class Motions {
+    private Motions() {}
+
+    private record Cached(@Nullable ResolvedAnimation file, MultiblockPattern shape, int version, ResolvedAnimation resolved) {}
+
+    private static final Map<MultiblockCoreBlockEntity, Cached> CACHE = new WeakHashMap<>();
+
+    /** What this core plays: {@code file} for a machine with a fixed shape (or none recorded yet). */
+    static @Nullable ResolvedAnimation resolve(MultiblockCoreBlockEntity core, @Nullable ResolvedAnimation file) {
+        MultiblockPattern shape = core.recordedShape();
+        if (shape == null) return file;
+        Cached cached = CACHE.get(core);
+        if (cached != null && cached.file() == file && cached.shape() == shape && cached.version() == core.motionsVersion()) {
+            return cached.resolved();
+        }
+        List<Effect> effects = new ArrayList<>(file == null ? List.of() : file.effects());
+        Map<String, BlockPos> anchors = new HashMap<>();
+        FreeBuild rules = core.freeBuild();
+        var when = rules == null ? com.lealex.alchyx.animation.Trigger.WORKING : rules.motionWhen();
+        int n = 0;
+        for (Map.Entry<BlockPos, Motion> entry : core.motions().entrySet()) {
+            String anchor = "alchyx_motion_" + n++;
+            anchors.put(anchor, entry.getKey());
+            effects.add(entry.getValue().effect(anchor, when));
+        }
+        ResolvedAnimation resolved = effects.isEmpty() ? null : new ResolvedAnimation(core.patternId(), Optional.empty(), anchors,
+                shape.minOffset(), shape.maxOffset(), List.copyOf(effects));
+        if (resolved == null) {
+            CACHE.remove(core);
+            return null;
+        }
+        CACHE.put(core, new Cached(file, shape, core.motionsVersion(), resolved));
+        return resolved;
+    }
+}

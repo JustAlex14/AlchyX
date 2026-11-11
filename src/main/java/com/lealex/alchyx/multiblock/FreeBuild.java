@@ -1,5 +1,7 @@
 package com.lealex.alchyx.multiblock;
 
+import com.lealex.alchyx.animation.Motion;
+import com.lealex.alchyx.animation.Trigger;
 import com.lealex.alchyx.block.entity.MultiblockCoreBlockEntity;
 import com.mojang.serialization.Codec;
 import com.mojang.serialization.DataResult;
@@ -38,11 +40,14 @@ import java.util.Set;
  *   <li>{@code requires}: blocks it must contain, each {@code {"block": "id or #tag", "count": n, "name": "..."}}.</li>
  *   <li>{@code formed}: {@code "same"} (default): the blocks become machine parts that look the same, and come back as
  *       they were when the machine breaks; {@code "keep"}: they stay as they are.</li>
+ *   <li>{@code motions}: the motions ({@link Motion}) players may give the parts with the Recorder. Default: all of
+ *       them; an empty list: none. {@code motion_when} (default {@code "working"}): when they play
+ *       ({@code always}, {@code idle} or {@code working}).</li>
  * </ul>
  * The pattern file still needs its usual one-cell grid with the core, so the rest of AlchyX knows the machine.
  */
 public record FreeBuild(int maxWidth, int maxHeight, int minBlocks, List<BlockMatch> allowed, List<BlockMatch> forbidden,
-                        List<Requirement> requires, Formed formed) {
+                        List<Requirement> requires, Formed formed, List<Motion> motions, Trigger motionWhen) {
 
     /** No box may be larger than this along any axis, whatever a file says (block change lookups stay cheap). */
     public static final int HARD_LIMIT = 32;
@@ -111,7 +116,11 @@ public record FreeBuild(int maxWidth, int maxHeight, int minBlocks, List<BlockMa
             BlockMatch.CODEC.listOf().optionalFieldOf("allowed", List.of()).forGetter(FreeBuild::allowed),
             BlockMatch.CODEC.listOf().optionalFieldOf("forbidden", List.of()).forGetter(FreeBuild::forbidden),
             Requirement.CODEC.listOf().optionalFieldOf("requires", List.of()).forGetter(FreeBuild::requires),
-            Formed.CODEC.optionalFieldOf("formed", Formed.SAME).forGetter(FreeBuild::formed)
+            Formed.CODEC.optionalFieldOf("formed", Formed.SAME).forGetter(FreeBuild::formed),
+            Motion.CODEC.listOf().optionalFieldOf("motions", List.of(Motion.values())).forGetter(FreeBuild::motions),
+            Trigger.CODEC.validate(when -> when.continuous() ? com.mojang.serialization.DataResult.success(when)
+                            : com.mojang.serialization.DataResult.error(() -> "motion_when must be always, idle or working"))
+                    .optionalFieldOf("motion_when", Trigger.WORKING).forGetter(FreeBuild::motionWhen)
     ).apply(instance, FreeBuild::new));
 
     /** The rules in a few words, for the Recorder's message: "Up to 7 wide and 7 high. Needs 6 Glass, 1 Cauldron." */

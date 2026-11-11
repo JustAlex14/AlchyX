@@ -95,6 +95,7 @@ Draws a block that moves, e.g. a piston head striking:
 | `direction` | `facing` | `facing` (the target's own facing), `toward_core`, `outward`, or `up`/`down`/`north`/`south`/`east`/`west` (pattern coordinates) |
 | `align` | true | turn the drawn block's facing to the direction |
 | `swap` | | state values the target shows while the move lasts (`{"extended": true}` hides a piston's face) |
+| `hide` | false | the target itself is not drawn while the move lasts, only its moving copy (a block that turns or bobs as a whole). Works on formed parts |
 | `keyframes` | | `t` (ticks from the start), `move` (blocks along the direction), `offset` [x, y, z], `rotation` [x, y, z] degrees around the block's center, `scale`; blended linearly, the move ends at the last `t`. `state` sets state values on the drawn block from that keyframe on (not blended), e.g. `{"short": true}` for a piston head less than half out, so its arm doesn't stick out of the base |
 
 Another use: a glitch, where every block of a kind twitches for a few ticks once a machine is corrupted enough

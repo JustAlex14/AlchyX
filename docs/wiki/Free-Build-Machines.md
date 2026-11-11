@@ -11,6 +11,20 @@ A free-build machine has no fixed shape. Each player builds it the way they like
 
 After that the machine works like any other: break a block of it and it unforms, put it back and it forms again. The parts look exactly like the blocks you placed, and when the machine breaks they turn back into those blocks (nothing is lost).
 
+### Making blocks move
+
+Once the machine stands, use the Recorder on any of its blocks to make that block move while the machine works. Each use picks the next motion, then back to still:
+
+| Motion | What the block does |
+|---|---|
+| spin | turns around itself, a full turn every 2 seconds |
+| bob | floats up and down |
+| strike | strikes out the way it faces, like a piston, and comes back |
+| swing | swings a quarter turn like a door, waits, swings back |
+| shake | trembles in place |
+
+Sneak + use on a block stops it at once. Some machines allow only some motions, or none.
+
 - **Sneak + use the Recorder on the core**: forget its shape, to rebuild it differently. A formed machine breaks first.
 - **Sneak + use the Recorder in the air**: forget the corners.
 - Chests, barrels and other blocks that hold things stay real blocks, so they keep what is in them. So do liquids.
@@ -38,7 +52,9 @@ Add `free_build` to a pattern file. The grid is then just the core, so the rest 
       {"block": "minecraft:hopper", "count": 1, "name": "a hopper"},
       {"block": "#c:glass_blocks", "count": 4, "name": "glass"}
     ],
-    "formed": "same"
+    "formed": "same",
+    "motions": ["spin", "strike", "shake"],
+    "motion_when": "working"
   }
 }
 ```
@@ -52,6 +68,8 @@ Add `free_build` to a pattern file. The grid is then just the core, so the rest 
 | `forbidden` | none | block ids or `#tags` it may never use |
 | `requires` | none | blocks it must contain: `block` (id or `#tag`), `count` (default 1), `name` (what the player reads) |
 | `formed` | `same` | `same`: the blocks become machine parts that look the same, and turn back into the blocks when the machine breaks. `keep`: they stay as they are |
+| `motions` | all | the motions players may give the blocks: `spin`, `bob`, `strike`, `swing`, `shake`. `[]`: none |
+| `motion_when` | `working` | when the motions play: `always`, `idle` or `working` |
 
 Blocks that can never be used: a part of another machine, another machine's core, and blocks nothing can break (bedrock, barriers).
 
@@ -73,7 +91,11 @@ Animation files work on free-build machines too. Block selectors (`"targets": {"
 FreeBuild rules = core.freeBuild();             // null for a fixed-shape machine
 MultiblockPattern shape = core.recordedShape(); // null until a player records one
 String problem = core.recordShape(cornerA, cornerB); // null when recorded (server side)
-core.forgetShape();
+core.forgetShape();                             // also clears the motions
+core.motions();                                 // offset from the core -> Motion
+core.changeMotion(pos, false);                  // next allowed motion for that part (true: none)
 ```
 
 `pattern()` returns the recorded shape once there is one, so everything built on it (checks, parts, previews, the Structure Builder) follows the player's build. `filePattern()` is always the file.
+
+Motions only work on parts (`formed: same`), since the block itself is hidden while its moving copy is drawn. They are played by the same engine as animation files, as `block_move` effects with `"hide": true`.

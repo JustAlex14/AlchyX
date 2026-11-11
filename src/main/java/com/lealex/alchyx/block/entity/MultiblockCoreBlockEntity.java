@@ -427,8 +427,56 @@ public abstract class MultiblockCoreBlockEntity extends BlockEntity {
             breakStructure();
         }
         builtPattern = null;
+        motions.clear();
+        motionsVersion++;
         setRecordedShape(null);
         return true;
+    }
+
+    // ---- Motions a player gave the parts of a free-build machine (animation/Motion), by offset from the core ----
+
+    private final Map<BlockPos, com.lealex.alchyx.animation.Motion> motions = new java.util.LinkedHashMap<>();
+    private int motionsVersion = 0; // changes with every change of the motions (the client's animation follows it)
+
+    private record MotionAt(BlockPos offset, com.lealex.alchyx.animation.Motion motion) {
+        static final com.mojang.serialization.Codec<MotionAt> CODEC = com.mojang.serialization.codecs.RecordCodecBuilder.create(instance -> instance.group(
+                BlockPos.CODEC.fieldOf("offset").forGetter(MotionAt::offset),
+                com.lealex.alchyx.animation.Motion.CODEC.fieldOf("motion").forGetter(MotionAt::motion)
+        ).apply(instance, MotionAt::new));
+    }
+
+    /** The motions given to this machine's parts, by offset from the core (read only). */
+    public Map<BlockPos, com.lealex.alchyx.animation.Motion> motions() {
+        return java.util.Collections.unmodifiableMap(motions);
+    }
+
+    /** A number that changes whenever the motions do. */
+    public int motionsVersion() {
+        return motionsVersion;
+    }
+
+    /**
+     * Gives the part at {@code pos} the next motion its machine allows (none, then each allowed motion in turn, then
+     * none again), or takes its motion away when {@code clear}. Returns what the part does now (null: nothing), also
+     * null when the part can't move (not a formed part of this free-build machine).
+     * Server side.
+     */
+    public com.lealex.alchyx.animation.@Nullable Motion changeMotion(BlockPos pos, boolean clear) {
+        com.lealex.alchyx.multiblock.FreeBuild rules = freeBuild();
+        if (level == null || level.isClientSide() || rules == null || recordedShape == null || !formed) return null;
+        if (!ShellParts.isPart(level.getBlockState(pos)) || !structureContains(pos)) return null;
+        BlockPos offset = pos.subtract(worldPosition);
+        com.lealex.alchyx.animation.Motion now = motions.get(offset), next = null;
+        if (!clear && !rules.motions().isEmpty()) {
+            int index = now == null ? -1 : rules.motions().indexOf(now);
+            next = index + 1 < rules.motions().size() ? rules.motions().get(index + 1) : null;
+        }
+        if (next == null) motions.remove(offset);
+        else motions.put(offset, next);
+        motionsVersion++;
+        setChanged();
+        syncToClients();
+        return next;
     }
 
     private void setRecordedShape(@Nullable MultiblockPattern shape) {
@@ -907,6 +955,11 @@ public abstract class MultiblockCoreBlockEntity extends BlockEntity {
         if (formedAt != 0L) output.putLong("formedAt", formedAt);
         if (upgrades != null) upgrades.save(output);
         if (recordedShape != null) output.store("alchyx_shape", MultiblockPattern.CODEC, recordedShape);
+        if (!motions.isEmpty()) {
+            List<MotionAt> list = new ArrayList<>();
+            motions.forEach((offset, motion) -> list.add(new MotionAt(offset, motion)));
+            output.store("alchyx_motions", MotionAt.CODEC.listOf(), list);
+        }
     }
 
     private static final com.mojang.serialization.Codec<Map<String, Integer>> LEVELS_CODEC =
@@ -932,7 +985,20 @@ public abstract class MultiblockCoreBlockEntity extends BlockEntity {
         animLevels.clear();
         input.read("animLevels", LEVELS_CODEC).ifPresent(animLevels::putAll);
         if (upgrades != null) upgrades.load(input);
-        recordedShape = input.read("alchyx_shape", MultiblockPattern.CODEC).orElse(null);
-        occupied = null;
+        // Every sync reads these again: keep the same objects while nothing changed, so the client's animation of a
+        // free-build machine isn't rebuilt (and restarted) at each sync
+        MultiblockPattern shape = input.read("alchyx_shape", MultiblockPattern.CODEC).orElse(null);
+        if (shape == null || recordedShape == null || !shape.layers().equals(recordedShape.layers())
+                || !shape.key().equals(recordedShape.key()) || !shape.result().equals(recordedShape.result())) {
+            recordedShape = shape;
+            occupied = null;
+        }
+        Map<BlockPos, com.lealex.alchyx.animation.Motion> read = new java.util.LinkedHashMap<>();
+        input.read("alchyx_motions", MotionAt.CODEC.listOf()).ifPresent(list -> list.forEach(at -> read.put(at.offset(), at.motion())));
+        if (!read.equals(motions)) {
+            motions.clear();
+            motions.putAll(read);
+            motionsVersion++;
+        }
     }
 }

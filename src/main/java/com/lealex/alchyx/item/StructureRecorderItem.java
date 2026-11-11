@@ -1,5 +1,6 @@
 package com.lealex.alchyx.item;
 
+import com.lealex.alchyx.animation.Motion;
 import com.lealex.alchyx.block.entity.MultiblockCoreBlockEntity;
 import com.lealex.alchyx.multiblock.FreeBuild;
 import net.minecraft.ChatFormatting;
@@ -30,6 +31,8 @@ import java.util.function.Consumer;
  *       records the build as its shape and forms. Otherwise it says what is wrong (too big, a block it refuses,
  *       what is still missing).</li>
  * </ol>
+ * Once the machine stands, use it on one of its blocks to pick how that block moves (animation/Motion: spin, bob,
+ * strike, swing, shake, in turn, then still again; sneak + use stops it at once), among the motions the machine allows.
  * Sneak + use on a core forgets its shape (a formed machine breaks, its parts turn back into their blocks). Sneak +
  * use in the air forgets the corners. Used on a core with no corners marked, it tells that machine's rules.
  */
@@ -62,6 +65,15 @@ public class StructureRecorderItem extends Item implements MachineTool {
         if (level.getBlockEntity(pos) instanceof MultiblockCoreBlockEntity core) {
             useOnCore(level, player, stack, core);
             return InteractionResult.SUCCESS;
+        }
+
+        // A part of a formed free-build machine: pick its motion
+        if (com.lealex.alchyx.multiblock.ShellParts.isPart(level.getBlockState(pos))) {
+            MultiblockCoreBlockEntity owner = com.lealex.alchyx.multiblock.CoreTracker.formedCoreAt(level, pos);
+            if (owner != null && owner.freeBuild() != null && owner.recordedShape() != null) {
+                useOnPart(level, player, pos, owner);
+                return InteractionResult.SUCCESS;
+            }
         }
 
         // A corner
@@ -109,6 +121,27 @@ public class StructureRecorderItem extends Item implements MachineTool {
         level.playSound(null, core.getBlockPos(), SoundEvents.BOOK_PAGE_TURN, SoundSource.PLAYERS, 1.0f, 1.0f);
     }
 
+    private static void useOnPart(Level level, Player player, BlockPos pos, MultiblockCoreBlockEntity owner) {
+        FreeBuild rules = owner.freeBuild();
+        if (rules == null) return;
+        if (!level.mayInteract(player, pos)) {
+            tell(player, "You can't change this machine here");
+            return;
+        }
+        if (rules.motions().isEmpty()) {
+            tell(player, "This machine's blocks don't move");
+            return;
+        }
+        Motion motion = owner.changeMotion(pos, player.isShiftKeyDown());
+        String when = switch (rules.motionWhen()) {
+            case IDLE -> " while the machine rests";
+            case WORKING -> " while the machine works";
+            default -> "";
+        };
+        tell(player, motion == null ? "This block stays still" : "This block will " + motion.getSerializedName() + when + " (use again: next motion)");
+        level.playSound(null, pos, SoundEvents.AMETHYST_BLOCK_CHIME, SoundSource.PLAYERS, 0.6f, motion == null ? 0.8f : 1.3f);
+    }
+
     // Sneak + use in the air: forget the corners
     @Override
     public InteractionResult use(Level level, Player player, InteractionHand hand) {
@@ -139,6 +172,7 @@ public class StructureRecorderItem extends Item implements MachineTool {
         }
         tooltip.accept(Component.literal("Use on two blocks: the corners of your build").withStyle(ChatFormatting.GRAY));
         tooltip.accept(Component.literal("Use on the machine's core: record the build").withStyle(ChatFormatting.GRAY));
+        tooltip.accept(Component.literal("Use on a block of a formed machine: pick how it moves").withStyle(ChatFormatting.GRAY));
         tooltip.accept(Component.literal("Sneak + use on the core: forget its shape").withStyle(ChatFormatting.DARK_GRAY));
         tooltip.accept(Component.literal("Sneak + use in the air: forget the corners").withStyle(ChatFormatting.DARK_GRAY));
     }

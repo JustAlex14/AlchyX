@@ -129,10 +129,12 @@ public sealed interface Effect permits Effect.Particle, Effect.Sound, Effect.Blo
      *       ("up", "north"...) in pattern coordinates;</li>
      *   <li>"align": turn the drawn block's facing to the direction (default true);</li>
      *   <li>"swap": state values the target shows while the move lasts, e.g. {"extended": true} for a piston.</li>
+     *   <li>"hide": the target itself is not drawn while the move lasts (only its moving copy is), for a block that
+     *       turns or bobs as a whole (default false). Works on formed parts.</li>
      * </ul>
      */
     record BlockMove(Timing timing, Target targets, Optional<BlockLook> draw, String direction, boolean align,
-                     Map<String, String> swap, List<Keyframe> keyframes) implements Effect {
+                     Map<String, String> swap, List<Keyframe> keyframes, boolean hide) implements Effect {
         public static final MapCodec<BlockMove> MAP_CODEC = RecordCodecBuilder.<BlockMove>mapCodec(instance -> instance.group(
                 Timing.MAP_CODEC.forGetter(BlockMove::timing),
                 Target.CODEC.fieldOf("targets").forGetter(BlockMove::targets),
@@ -140,10 +142,11 @@ public sealed interface Effect permits Effect.Particle, Effect.Sound, Effect.Blo
                 Codec.STRING.optionalFieldOf("direction", "facing").forGetter(BlockMove::direction),
                 Codec.BOOL.optionalFieldOf("align", true).forGetter(BlockMove::align),
                 BlockLook.STATE.optionalFieldOf("swap", Map.of()).forGetter(BlockMove::swap),
-                Keyframe.CODEC.listOf(1, 64).fieldOf("keyframes").forGetter(BlockMove::keyframes)
+                Keyframe.CODEC.listOf(1, 64).fieldOf("keyframes").forGetter(BlockMove::keyframes),
+                Codec.BOOL.optionalFieldOf("hide", false).forGetter(BlockMove::hide)
         ).apply(instance, BlockMove::new)).xmap(
                 move -> new BlockMove(move.timing, move.targets, move.draw, move.direction, move.align, move.swap,
-                        move.keyframes.stream().sorted(Comparator.comparingDouble(Keyframe::t)).toList()),
+                        move.keyframes.stream().sorted(Comparator.comparingDouble(Keyframe::t)).toList(), move.hide),
                 move -> move);
 
         @Override

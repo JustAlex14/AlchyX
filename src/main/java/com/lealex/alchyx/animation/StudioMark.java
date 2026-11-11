@@ -30,9 +30,11 @@ import java.util.Optional;
  *       with {@code to}, it travels from this spot to that one as the work goes on.</li>
  * </ul>
  * {@code what} is the particle type, the entity type or the display. {@link Times}: when in the work it shows, and
- * when a traveling item leaves and arrives.
+ * when a traveling item leaves and arrives. {@code items}: what an item anchor shows in turn, each from its
+ * {@code switches} entry (percent of the work; none: they share the time evenly).
  */
-public record StudioMark(BlockPos offset, Kind kind, String what, int yaw, Optional<BlockPos> to, Times times, List<String> items) {
+public record StudioMark(BlockPos offset, Kind kind, String what, int yaw, Optional<BlockPos> to, Times times, List<String> items,
+                         List<Integer> switches) {
 
     /** The most items an item anchor goes through. */
     public static final int MAX_ITEMS = 16;
@@ -104,32 +106,91 @@ public record StudioMark(BlockPos offset, Kind kind, String what, int yaw, Optio
     public static final List<String> DISPLAYS = List.of("input", "output", "result");
 
     public StudioMark(BlockPos offset, Kind kind, String what, int yaw) {
-        this(offset, kind, what, yaw, Optional.empty(), Times.ALWAYS, List.of());
+        this(offset, kind, what, yaw, Optional.empty(), Times.ALWAYS, List.of(), List.of());
     }
 
     public StudioMark withWhat(String what) {
-        return new StudioMark(offset, kind, what, yaw, to, times, items);
+        return new StudioMark(offset, kind, what, yaw, to, times, items, switches);
     }
 
     public StudioMark withYaw(int yaw) {
-        return new StudioMark(offset, kind, what, yaw, to, times, items);
+        return new StudioMark(offset, kind, what, yaw, to, times, items, switches);
     }
 
     public StudioMark withTo(Optional<BlockPos> to) {
-        return new StudioMark(offset, kind, what, yaw, to, times, items);
+        return new StudioMark(offset, kind, what, yaw, to, times, items, switches);
     }
 
     public StudioMark withTimes(Times times) {
-        return new StudioMark(offset, kind, what, yaw, to, times.tidy(), items);
+        return new StudioMark(offset, kind, what, yaw, to, times.tidy(), items, switches);
     }
 
+    /** With these items; their switch times kept if there are as many, else shared evenly again. */
     public StudioMark withItems(List<String> items) {
-        return new StudioMark(offset, kind, what, yaw, to, times, List.copyOf(items));
+        return new StudioMark(offset, kind, what, yaw, to, times, List.copyOf(items), items.size() == switches.size() ? switches : List.of());
+    }
+
+    /** Without the item at this place in the list (and its switch time). */
+    public StudioMark withoutItem(int index) {
+        List<String> left = new java.util.ArrayList<>(items);
+        left.remove(index);
+        List<Integer> times = new java.util.ArrayList<>(switches);
+        if (index < times.size()) times.remove(index);
+        return new StudioMark(offset, kind, what, yaw, to, this.times, List.copyOf(left), times.size() == left.size() ? List.copyOf(times) : List.of());
+    }
+
+    /** With the item at this place in the list coming at {@code percent} of the work (the others kept in order around it). */
+    public StudioMark withSwitch(int index, int percent) {
+        List<Integer> times = new java.util.ArrayList<>();
+        for (int i = 0; i < items.size(); i++) times.add(itemStart(i));
+        times.set(index, Math.max(0, Math.min(100, percent)));
+        for (int i = 0; i < times.size(); i++) {
+            if (i < index) times.set(i, Math.min(times.get(i), times.get(index)));
+            if (i > index) times.set(i, Math.max(times.get(i), times.get(index)));
+        }
+        return new StudioMark(offset, kind, what, yaw, to, this.times, items, List.copyOf(times));
+    }
+
+    /** When the item at this place in the list comes, in percent of the work (its switch, or its even share). */
+    public int itemStart(int index) {
+        if (switches.size() == items.size()) return switches.get(index);
+        return Math.round(times.showFrom() + (times.showUntil() - times.showFrom()) * index / (float) Math.max(1, items.size()));
+    }
+
+    /** Which of the items shows at this point (0 to 1) of the work, like on the machine. */
+    public int itemIndex(float progress) {
+        if (items.isEmpty()) return -1;
+        if (switches.size() == items.size()) {
+            int index = 0;
+            for (int i = 1; i < items.size(); i++) if (progress * 100 >= switches.get(i)) index = i;
+            return index;
+        }
+        float from = times.showFrom() / 100.0F, until = times.showUntil() / 100.0F;
+        float local = until - from < 1e-4F ? 1 : (progress - from) / (until - from);
+        return Math.max(0, Math.min(items.size() - 1, (int) (local * items.size())));
+    }
+
+    /** The same mark with only usable items (at most {@link #MAX_ITEMS}), their switch times in 0 to 100 and in order. */
+    public StudioMark cleaned() {
+        if (kind != Kind.ITEM) return new StudioMark(offset, kind, what, yaw, Optional.empty(), times.tidy(), List.of(), List.of());
+        boolean timed = switches.size() == items.size();
+        List<String> kept = new java.util.ArrayList<>();
+        List<Integer> keptTimes = new java.util.ArrayList<>();
+        int last = 0;
+        for (int i = 0; i < items.size() && kept.size() < MAX_ITEMS; i++) {
+            if (!validEntry(items.get(i))) continue;
+            kept.add(items.get(i));
+            if (timed) {
+                last = Math.max(last, Math.max(0, Math.min(100, switches.get(i))));
+                keptTimes.add(last);
+            }
+        }
+        return new StudioMark(offset, kind, what, yaw, to, times.tidy(), List.copyOf(kept), timed ? List.copyOf(keptTimes) : List.of());
     }
 
     /** The same mark, its spots moved by this much. */
     public StudioMark shifted(BlockPos by) {
-        return new StudioMark(offset.offset(by), kind, what, yaw, to.map(t -> t.offset(by)), times, items);
+        return new StudioMark(offset.offset(by), kind, what, yaw, to.map(t -> t.offset(by)), times, items, switches);
     }
 
     /** Whether an item anchor's entry is usable: a display's name ("input"), or an item that exists. */
@@ -151,7 +212,8 @@ public record StudioMark(BlockPos offset, Kind kind, String what, int yaw, Optio
             Codec.INT.optionalFieldOf("yaw", 0).forGetter(StudioMark::yaw),
             BlockPos.CODEC.optionalFieldOf("to").forGetter(StudioMark::to),
             Times.CODEC.optionalFieldOf("times", Times.ALWAYS).forGetter(StudioMark::times),
-            Codec.STRING.listOf().optionalFieldOf("items", List.of()).forGetter(StudioMark::items)
+            Codec.STRING.listOf().optionalFieldOf("items", List.of()).forGetter(StudioMark::items),
+            Codec.INT.listOf().optionalFieldOf("switches", List.of()).forGetter(StudioMark::switches)
     ).apply(instance, StudioMark::new));
 
     public static final StreamCodec<ByteBuf, StudioMark> STREAM_CODEC = StreamCodec.composite(
@@ -162,6 +224,7 @@ public record StudioMark(BlockPos offset, Kind kind, String what, int yaw, Optio
             ByteBufCodecs.optional(BlockPos.STREAM_CODEC), StudioMark::to,
             Times.STREAM_CODEC, StudioMark::times,
             ByteBufCodecs.stringUtf8(256).apply(ByteBufCodecs.list(MAX_ITEMS)), StudioMark::items,
+            ByteBufCodecs.VAR_INT.apply(ByteBufCodecs.list(MAX_ITEMS)), StudioMark::switches,
             StudioMark::new);
 
     /** The particle to show, if the id names a plain particle type (one that needs no extra settings). */
@@ -193,7 +256,8 @@ public record StudioMark(BlockPos offset, Kind kind, String what, int yaw, Optio
                     to.isPresent() ? 0.0F : 0.05F, 0.0F,
                     toAnchor == null ? Optional.empty() : Optional.of(new Target(Optional.of(toAnchor), Optional.empty(), Map.of(), Vec3.ZERO)),
                     List.of(times.leave() / 100.0F, times.arrive() / 100.0F),
-                    List.copyOf(items));
+                    List.copyOf(items),
+                    switches.size() == items.size() ? switches.stream().map(p -> p / 100.0F).toList() : List.of());
         };
     }
 }

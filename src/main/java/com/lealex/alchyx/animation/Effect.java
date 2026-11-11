@@ -184,12 +184,13 @@ public sealed interface Effect permits Effect.Particle, Effect.Sound, Effect.Blo
      * ([from, until], fractions of the operation, default [0, 1]): when it leaves "at" and when it reaches "to".
      * "items": shown in turn through the operation (or its "between"), instead of one display: item ids, or display
      * names ("input": what the machine's display shows), e.g. ["input", "minecraft:cobblestone", "minecraft:gravel"].
-     * Then "display" may be left out.
+     * Then "display" may be left out. "item_times" (fractions of the operation, one per item, in order): when each
+     * one comes, e.g. [0, 0.3, 0.9]; without it they share the time evenly.
      */
     record FloatingItem(Timing timing, String display, Target at, ItemMotion motion, float speed,
                         Optional<Float> workingSpeed, float radius, int copies, int perItems, float scale,
                         float bob, float phase, Optional<Target> to, List<Float> travel,
-                        List<String> items) implements Effect {
+                        List<String> items, List<Float> itemTimes) implements Effect {
         public static final MapCodec<FloatingItem> MAP_CODEC = RecordCodecBuilder.<FloatingItem>mapCodec(instance -> instance.group(
                 Timing.MAP_CODEC.forGetter(FloatingItem::timing),
                 Codec.STRING.optionalFieldOf("display", "").forGetter(FloatingItem::display),
@@ -205,7 +206,8 @@ public sealed interface Effect permits Effect.Particle, Effect.Sound, Effect.Blo
                 Codec.FLOAT.optionalFieldOf("phase", 0.0F).forGetter(FloatingItem::phase),
                 Target.CODEC.optionalFieldOf("to").forGetter(FloatingItem::to),
                 Codec.floatRange(0.0F, 1.0F).listOf(2, 2).optionalFieldOf("travel", List.of(0.0F, 1.0F)).forGetter(FloatingItem::travel),
-                Codec.STRING.listOf(0, 64).optionalFieldOf("items", List.of()).forGetter(FloatingItem::items)
+                Codec.STRING.listOf(0, 64).optionalFieldOf("items", List.of()).forGetter(FloatingItem::items),
+                Codec.floatRange(0.0F, 1.0F).listOf(0, 64).optionalFieldOf("item_times", List.of()).forGetter(FloatingItem::itemTimes)
         ).apply(instance, FloatingItem::new)).validate(i -> !i.display.isEmpty() || !i.items.isEmpty() ? DataResult.success(i)
                 : DataResult.error(() -> "an item effect needs \"display\" or \"items\""));
 
@@ -216,6 +218,11 @@ public sealed interface Effect permits Effect.Particle, Effect.Sound, Effect.Blo
         public net.minecraft.world.item.ItemStack shown(java.util.function.Function<String, net.minecraft.world.item.ItemStack> displays,
                                                         float progress) {
             if (items.isEmpty()) return displays.apply(display);
+            if (itemTimes.size() == items.size()) { // "item_times": when each one comes, in the operation
+                int index = 0;
+                for (int i = 1; i < items.size(); i++) if (progress >= itemTimes.get(i)) index = i;
+                return entryStack(items.get(index), displays);
+            }
             float span = timing().until() - timing().from();
             float local = span < 1e-4F ? 1 : (progress - timing().from()) / span;
             String entry = items.get(Math.max(0, Math.min(items.size() - 1, (int) (local * items.size()))));
@@ -260,9 +267,11 @@ public sealed interface Effect permits Effect.Particle, Effect.Sound, Effect.Blo
                 BlockLook.STATE.listOf(1, 64).fieldOf("steps").forGetter(StateSteps::steps)
         ).apply(instance, StateSteps::new));
 
-        /** Which step shows at this point (0 to 1) of the operation. */
+        /** Which step shows at this point (0 to 1) of the operation (through "between" if set). */
         public int index(float progress) {
-            return Math.max(0, Math.min(steps.size() - 1, (int) (progress * steps.size())));
+            float span = timing.until() - timing.from();
+            float local = span < 1e-4F ? 1 : (progress - timing.from()) / span;
+            return Math.max(0, Math.min(steps.size() - 1, (int) (local * steps.size())));
         }
 
         /** Whether the steps show now ("start" and "finish" make no sense here: they count as "working"). */

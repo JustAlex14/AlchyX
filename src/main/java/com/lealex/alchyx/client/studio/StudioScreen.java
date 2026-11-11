@@ -4,6 +4,7 @@ import com.lealex.alchyx.AlchyX;
 import com.lealex.alchyx.animation.BlockLook;
 import com.lealex.alchyx.animation.Keyframe;
 import com.lealex.alchyx.animation.Motion;
+import com.lealex.alchyx.animation.MotionSetup;
 import com.lealex.alchyx.animation.StudioMark;
 import com.lealex.alchyx.block.entity.MultiblockCoreBlockEntity;
 import com.lealex.alchyx.client.miniature.BoxMesh;
@@ -86,6 +87,8 @@ public class StudioScreen extends Screen {
     private final Set<BlockPos> movable = new LinkedHashSet<>();        // cells that can be given a motion
     private final Map<BlockPos, Motion> edits = new LinkedHashMap<>();  // the motions as changed here (box coordinates)
     private final Map<BlockPos, Motion> saved = new LinkedHashMap<>();  // as the machine has them
+    private final Map<BlockPos, MotionSetup> setups = new LinkedHashMap<>();      // when each motion plays, a change's state (box coordinates)
+    private final Map<BlockPos, MotionSetup> savedSetups = new LinkedHashMap<>();
     private final Map<BlockPos, StudioMark> marks = new LinkedHashMap<>();     // the anchors as changed here (box coordinates)
     private final Map<BlockPos, StudioMark> savedMarks = new LinkedHashMap<>();
     private final Set<BlockPos> chosen = new LinkedHashSet<>();
@@ -113,6 +116,9 @@ public class StudioScreen extends Screen {
     private final List<Button> anchorButtons = new ArrayList<>();
     private @Nullable Button particlesButton, figureButton, itemButton, removeButton, previousButton, nextButton, turnButton;
     private @Nullable Button appearButton, vanishButton, leaveButton, arriveButton, alwaysButton, pickItemsButton;
+    private final List<Button> blockButtons = new ArrayList<>(); // Blocks tab: when the chosen blocks' motion plays, a change's state
+    private @Nullable Button startButton, stopButton, wholeButton, stateButton;
+    private int motionRows;                // rows of motion buttons (Blocks tab)
     private static final int ICONS_PER_ROW = 7;
 
     public StudioScreen(MultiblockCoreBlockEntity core) {
@@ -135,6 +141,8 @@ public class StudioScreen extends Screen {
         }
         core.motions().forEach((offset, motion) -> saved.put(offset.subtract(min), motion));
         edits.putAll(saved);
+        core.setups().forEach((offset, setup) -> savedSetups.put(offset.subtract(min), setup));
+        setups.putAll(savedSetups);
         for (StudioMark mark : core.marks()) {
             BlockPos at = mark.offset().subtract(min);
             savedMarks.put(at, mark.shifted(BlockPos.ZERO.subtract(min)));
@@ -163,6 +171,7 @@ public class StudioScreen extends Screen {
         motionButtons.clear();
         motionChoices.clear();
         anchorButtons.clear();
+        blockButtons.clear();
         int y = height - BAR + 5, x = MARGIN;
         addRenderableWidget(Button.builder(Component.literal(playing ? "Pause" : "Play"), b -> {
             playing = !playing;
@@ -197,11 +206,12 @@ public class StudioScreen extends Screen {
         List<@Nullable Motion> choices = new ArrayList<>();
         choices.add(null);
         choices.addAll(rules.motions());
-        int columns = choices.size() > 6 ? 2 : 1, column = 0;
-        int buttonWide = columns == 2 ? half : wide;
+        int columns = choices.size() > 12 ? 3 : choices.size() > 6 ? 2 : 1, column = 0;
+        int buttonWide = (wide - 2 * (columns - 1)) / columns;
+        motionRows = (choices.size() + columns - 1) / columns;
         for (Motion motion : choices) {
             Button button = addRenderableWidget(Button.builder(Component.literal(label(motion)), b -> give(motion))
-                    .bounds(px + column * (half + 4), py, buttonWide, 18).build());
+                    .bounds(px + column * (buttonWide + 2), py, buttonWide, 18).build());
             button.setTooltip(Tooltip.create(Component.literal(explain(motion))));
             motionButtons.add(button);
             motionChoices.add(motion);
@@ -210,6 +220,18 @@ public class StudioScreen extends Screen {
                 py += ROW;
             }
         }
+        // When the chosen blocks' motion plays (from the work bar), and a change's state
+        py = LIST_TOP + motionRows * ROW + 2;
+        startButton = addRenderableWidget(Button.builder(Component.literal("Start here"), b -> retimeBlocks(0)).bounds(px, py, half, 18).build());
+        startButton.setTooltip(Tooltip.create(Component.literal("It plays from this point of the work (the work bar). Drag the bar first")));
+        stopButton = addRenderableWidget(Button.builder(Component.literal("Stop here"), b -> retimeBlocks(1)).bounds(px + half + 4, py, half, 18).build());
+        stopButton.setTooltip(Tooltip.create(Component.literal("It stops at this point of the work")));
+        py += ROW;
+        wholeButton = addRenderableWidget(Button.builder(Component.literal("All along"), b -> retimeBlocks(-1)).bounds(px, py, half, 18).build());
+        wholeButton.setTooltip(Tooltip.create(Component.literal("It plays all the time again")));
+        stateButton = addRenderableWidget(Button.builder(Component.literal("State..."), b -> pickState()).bounds(px + half + 4, py, half, 18).build());
+        stateButton.setTooltip(Tooltip.create(Component.literal("Pick the state the block changes to: any property it has (a trial spawner's state, a vault's...)")));
+        blockButtons.addAll(List.of(startButton, stopButton, wholeButton, stateButton));
 
         // Anchors: what plays at the spot
         py = LIST_TOP;
@@ -253,7 +275,13 @@ public class StudioScreen extends Screen {
     }
 
     private static String label(@Nullable Motion motion) {
-        return motion == null ? "Still" : capital(motion.getSerializedName());
+        if (motion == null) return "Still";
+        return switch (motion) {
+            case FILL_LAVA -> "Lava";
+            case FILL_SNOW -> "Snow";
+            case CHANGE -> "State";
+            default -> capital(motion.getSerializedName());
+        };
     }
 
     private static String explain(@Nullable Motion motion) {
@@ -269,6 +297,7 @@ public class StudioScreen extends Screen {
             case FILL_LAVA -> "A cauldron fills with lava";
             case FILL_SNOW -> "A cauldron fills with powder snow";
             case GROW -> "Grows: crops, saplings, anything with an age";
+            case CHANGE -> "Changes to the state you pick (State...): any block with a state, a trial spawner, a vault, modded blocks...";
             case OPEN -> "Opens: barrels, trapdoors, doors, fence gates";
         };
     }
@@ -279,7 +308,7 @@ public class StudioScreen extends Screen {
     }
 
     private boolean changed() {
-        return !edits.equals(saved) || !marks.equals(savedMarks);
+        return !edits.equals(saved) || !setups.equals(savedSetups) || !marks.equals(savedMarks);
     }
 
     private void refreshButtons() {
@@ -309,6 +338,15 @@ public class StudioScreen extends Screen {
             button.setMessage(Component.literal(current ? "> " + label(motion) + " <" : label(motion)));
         }
 
+        boolean moving = !chosen.isEmpty();
+        for (BlockPos cell : chosen) if (!edits.containsKey(cell)) moving = false;
+        for (Button button : blockButtons) {
+            button.visible = blocks;
+            button.active = moving;
+        }
+        if (stateButton != null) stateButton.active = chosen.size() > 0 && rules.motions().contains(Motion.CHANGE)
+                && chosen.stream().allMatch(cell -> Motion.CHANGE.fits(looks.get(cell)));
+
         StudioMark mark = spot == null ? null : marks.get(spot);
         for (Button button : anchorButtons) button.visible = tab == Tab.ANCHORS;
         if (particlesButton != null) particlesButton.active = spot != null && !rules.particles().isEmpty()
@@ -337,12 +375,70 @@ public class StudioScreen extends Screen {
     // ---- Changes ----
 
     private void give(@Nullable Motion motion) {
+        if (motion == Motion.CHANGE) {
+            pickState();
+            return;
+        }
         for (BlockPos cell : chosen) {
-            if (motion == null) edits.remove(cell);
-            else if (motion.fits(looks.get(cell))) edits.put(cell, motion);
+            if (motion == null) {
+                edits.remove(cell);
+                setups.remove(cell);
+            } else if (motion.fits(looks.get(cell))) {
+                edits.put(cell, motion);
+                MotionSetup setup = setups.get(cell);
+                if (setup != null) putSetup(cell, setup.withState(Map.of())); // (a state is only for a change)
+            }
         }
         stillDirty = true;
         refreshButtons();
+    }
+
+    private void putSetup(BlockPos cell, MotionSetup setup) {
+        if (setup.equals(MotionSetup.ALWAYS)) setups.remove(cell);
+        else setups.put(cell, setup);
+    }
+
+    /** Sets when the chosen blocks' motion plays from where the work bar stands: 0 start, 1 stop; -1 all along. */
+    private void retimeBlocks(int which) {
+        int now = Math.round(progress(0) * 100);
+        for (BlockPos cell : chosen) {
+            if (!edits.containsKey(cell)) continue;
+            MotionSetup setup = setups.getOrDefault(cell, MotionSetup.ALWAYS);
+            putSetup(cell, switch (which) {
+                case 0 -> setup.withTimes(now, Math.max(now, setup.until()));
+                case 1 -> setup.withTimes(Math.min(now, setup.from()), now);
+                default -> setup.withTimes(0, 100);
+            });
+        }
+        stillDirty = true;
+        refreshButtons();
+    }
+
+    /** Opens the state menu for the chosen blocks (the first one's properties); they then change to what's picked. */
+    private void pickState() {
+        if (chosen.isEmpty() || !rules.motions().contains(Motion.CHANGE)) return;
+        List<BlockPos> cells = new ArrayList<>(chosen);
+        BlockPos first = cells.getFirst();
+        BlockState look = looks.get(first);
+        if (look == null || !Motion.CHANGE.fits(look)) return;
+        MotionSetup current = edits.get(first) == Motion.CHANGE ? setups.getOrDefault(first, MotionSetup.ALWAYS) : MotionSetup.ALWAYS;
+        minecraft.setScreen(new StatePickerScreen(this, look, current.state(), state -> {
+            for (BlockPos cell : cells) {
+                BlockState own = looks.get(cell);
+                if (own == null || !Motion.CHANGE.fits(own)) continue;
+                if (state.isEmpty()) {
+                    if (edits.get(cell) == Motion.CHANGE) {
+                        edits.remove(cell);
+                        setups.remove(cell);
+                    }
+                    continue;
+                }
+                MotionSetup setup = setups.getOrDefault(cell, MotionSetup.ALWAYS).withState(state).tidy(Motion.CHANGE, own);
+                edits.put(cell, Motion.CHANGE);
+                putSetup(cell, setup);
+            }
+            stillDirty = true;
+        }));
     }
 
     private List<String> choicesFor(StudioMark.Kind kind) {
@@ -438,6 +534,8 @@ public class StudioScreen extends Screen {
         ItemPickerScreen.drawEntry(graphics, font, entry, x, y);
     }
 
+    private static final int ITEM_ROW = 28; // an icon and its time under it
+
     /** Where the item list's icons start, and how many go in a row. */
     private int itemsY() { return LIST_TOP + 7 * ROW + 18; }
 
@@ -454,9 +552,15 @@ public class StudioScreen extends Screen {
         for (StudioMark mark : marks.values()) sent.add(mark.shifted(min));
         ClientPacketListener connection = Minecraft.getInstance().getConnection();
         if (connection == null) return;
-        connection.send(new ServerboundCustomPayloadPacket(new MachineStudio.Save(corePos, motions, sent)));
+        Map<BlockPos, MotionSetup> timings = new LinkedHashMap<>();
+        setups.forEach((cell, setup) -> {
+            if (edits.containsKey(cell)) timings.put(cell.offset(min), setup);
+        });
+        connection.send(new ServerboundCustomPayloadPacket(new MachineStudio.Save(corePos, motions, timings, sent)));
         saved.clear();
         saved.putAll(edits);
+        savedSetups.clear();
+        savedSetups.putAll(setups);
         savedMarks.clear();
         savedMarks.putAll(marks);
         refreshButtons();
@@ -514,8 +618,8 @@ public class StudioScreen extends Screen {
         if (mark == null || mark.kind() != StudioMark.Kind.ITEM) return -1;
         int left = panelX() + 5, top = itemsY();
         if (x < left || y < top) return -1;
-        int column = (int) ((x - left) / 18), row = (int) ((y - top) / 18);
-        if (column >= ICONS_PER_ROW) return -1;
+        int column = (int) ((x - left) / 18), row = (int) ((y - top) / ITEM_ROW);
+        if (column >= ICONS_PER_ROW || (y - top) % ITEM_ROW >= 18) return -1;
         int index = row * ICONS_PER_ROW + column;
         return index < mark.items().size() ? index : -1;
     }
@@ -538,11 +642,10 @@ public class StudioScreen extends Screen {
     @Override
     public boolean mouseClicked(MouseButtonEvent event, boolean doubleClick) {
         int icon = iconUnder(event.x(), event.y());
-        if (icon >= 0 && event.button() == 0) {
+        if (icon >= 0 && (event.button() == 0 || event.button() == 1)) {
             StudioMark mark = marks.get(spot);
-            List<String> items = new ArrayList<>(mark.items());
-            items.remove(icon);
-            marks.put(spot, mark.withItems(items));
+            // Click: it comes at this point of the work (the work bar); right click: out of the list
+            marks.put(spot, event.button() == 1 ? mark.withoutItem(icon) : mark.withSwitch(icon, Math.round(progress(0) * 100)));
             refreshButtons();
             return true;
         }
@@ -717,7 +820,9 @@ public class StudioScreen extends Screen {
         int icon = iconUnder(mouseX, mouseY);
         if (icon >= 0 && spot != null && marks.get(spot) != null) {
             graphics.setTooltipForNextFrame(font, List.of(entryName(marks.get(spot).items().get(icon)),
-                    Component.literal("Click: remove it").withStyle(net.minecraft.ChatFormatting.DARK_GRAY)), java.util.Optional.empty(), mouseX, mouseY);
+                    Component.literal("Comes at " + marks.get(spot).itemStart(icon) + "% of the work").withStyle(net.minecraft.ChatFormatting.GRAY),
+                    Component.literal("Click: it comes where the work bar is").withStyle(net.minecraft.ChatFormatting.DARK_GRAY),
+                    Component.literal("Right click: take it out").withStyle(net.minecraft.ChatFormatting.DARK_GRAY)), java.util.Optional.empty(), mouseX, mouseY);
         }
     }
 
@@ -765,8 +870,20 @@ public class StudioScreen extends Screen {
                 graphics.text(font, chosen.size() + " blocks chosen", tx, ty, ACCENT, false);
                 graphics.text(font, "A motion goes to all", tx, ty + 12, FAINT, false);
             }
-            int rows = (motionButtons.size() + (motionButtons.size() > 6 ? 1 : 0)) / (motionButtons.size() > 6 ? 2 : 1);
-            y = LIST_TOP + rows * ROW + 4;
+            y = LIST_TOP + (motionRows + 2) * ROW + 6;
+            if (!chosen.isEmpty()) { // when the (first) chosen block's motion plays, and what a change sets
+                BlockPos cell = chosen.iterator().next();
+                MotionSetup setup = setups.getOrDefault(cell, MotionSetup.ALWAYS);
+                if (edits.containsKey(cell)) {
+                    graphics.text(font, setup.always() ? "All along the work" : "From " + setup.from() + "% to " + setup.until() + "%", tx, y, TEXT, false);
+                    y += 11;
+                }
+                for (Map.Entry<String, String> entry : setup.state().entrySet()) {
+                    if (y > viewY1() - 30) break;
+                    graphics.text(font, clip(entry.getKey() + ": " + entry.getValue()), tx, y, ACCENT, false);
+                    y += 10;
+                }
+            }
             String when = switch (rules.motionWhen()) {
                 case IDLE -> "Plays while it rests";
                 case WORKING -> "Plays while it works";
@@ -806,8 +923,10 @@ public class StudioScreen extends Screen {
                     y += 12;
                 }
                 if (!mark.items().isEmpty()) {
-                    graphics.text(font, "Click an item: remove it", tx, y, FAINT, false);
-                    y += 12;
+                    graphics.text(font, "Click an item: it comes", tx, y, FAINT, false);
+                    graphics.text(font, "at the work bar. Right", tx, y + 10, FAINT, false);
+                    graphics.text(font, "click: take it out", tx, y + 20, FAINT, false);
+                    y += 32;
                 }
             }
             help = List.of("Click a side of a block:", "the spot in front of it", "Then particles, a figure", "or an item",
@@ -820,15 +939,17 @@ public class StudioScreen extends Screen {
         }
     }
 
-    /** Draws an item anchor's items in a row (click one to remove it); returns the y under them. */
+    /** Draws an item anchor's items in a row, each with when it comes (the one showing now lit); returns the y under them. */
     private int itemList(GuiGraphicsExtractor graphics, StudioMark mark, int x, int top) {
+        int now = mark.itemIndex(progress(0));
         for (int i = 0; i < mark.items().size(); i++) {
-            int ix = x + (i % ICONS_PER_ROW) * 18, iy = top + (i / ICONS_PER_ROW) * 18;
-            graphics.fill(ix - 1, iy - 1, ix + 17, iy + 17, EDGE);
+            int ix = x + (i % ICONS_PER_ROW) * 18, iy = top + (i / ICONS_PER_ROW) * ITEM_ROW;
+            graphics.fill(ix - 1, iy - 1, ix + 17, iy + 17, i == now ? ACCENT : EDGE);
             drawEntry(graphics, mark.items().get(i), ix, iy);
-            if (i < mark.items().size() - 1 && (i + 1) % ICONS_PER_ROW != 0) graphics.text(font, ">", ix + 17, iy + 4, FAINT, false);
+            String at = mark.itemStart(i) + "%";
+            graphics.text(font, at, ix + 8 - font.width(at) / 2, iy + 18, i == now ? TEXT : FAINT, false);
         }
-        return top + (mark.items().isEmpty() ? 0 : ((mark.items().size() + ICONS_PER_ROW - 1) / ICONS_PER_ROW) * 18 + 2);
+        return top + (mark.items().isEmpty() ? 0 : ((mark.items().size() + ICONS_PER_ROW - 1) / ICONS_PER_ROW) * ITEM_ROW + 2);
     }
 
     private String clip(String text) {
@@ -849,9 +970,13 @@ public class StudioScreen extends Screen {
     private BlockState shownLook(BlockPos cell, BlockState look) {
         Motion motion = edits.get(cell);
         if (motion == null || motion.moves()) return look;
-        List<Map<String, String>> steps = motion.steps(look);
-        if (steps.isEmpty()) return look;
-        int step = Math.min(steps.size() - 1, (int) (progress(0) * steps.size())); // through the work, like on the machine
+        MotionSetup setup = setups.getOrDefault(cell, MotionSetup.ALWAYS);
+        List<Map<String, String>> steps = motion.steps(look, setup);
+        float progress = progress(0);
+        if (steps.isEmpty() || !setup.plays(progress)) return look;
+        float span = (setup.until() - setup.from()) / 100.0F;
+        float local = span < 1e-4F ? 1 : (progress - setup.from() / 100.0F) / span;
+        int step = Mth.clamp((int) (local * steps.size()), 0, steps.size() - 1); // through its time, like on the machine
         return BlockLook.apply(look, steps.get(step));
     }
 
@@ -893,6 +1018,10 @@ public class StudioScreen extends Screen {
                 BlockState look = looks.get(cell);
                 Motion motion = entry.getValue();
                 if (look == null || cell.getY() > top || !motion.moves()) continue;
+                if (!setups.getOrDefault(cell, MotionSetup.ALWAYS).plays(progress(partialTicks))) { // outside its time: at rest
+                    pieces.add(new StudioRenderState.Piece(pieceMesh(look), Vec3.atLowerCornerOf(cell), Vec3.ZERO, 1));
+                    continue;
+                }
                 if (motion == Motion.STRIKE && Motion.isPiston(look)) {
                     piston(pieces, cell, look, time);
                     continue;
@@ -964,10 +1093,7 @@ public class StudioScreen extends Screen {
         float progress = progress(partialTicks), time = clock + (playing ? partialTicks : 0);
         for (StudioMark mark : marks.values()) {
             if (mark.kind() != StudioMark.Kind.ITEM || mark.items().isEmpty() || mark.offset().getY() > top || !mark.times().shows(progress)) continue;
-            // Which item: the one this point of its showing time has reached, like on the machine
-            float from = mark.times().showFrom() / 100.0F, until = mark.times().showUntil() / 100.0F;
-            float local = until - from < 1e-4F ? 1 : (progress - from) / (until - from);
-            int index = Mth.clamp((int) (local * mark.items().size()), 0, mark.items().size() - 1);
+            int index = mark.itemIndex(progress); // the one this point of the work has reached, like on the machine
             net.minecraft.world.item.ItemStack stack = icon(mark.items().get(index)); // (a display shows its stand-in)
             if (stack.isEmpty()) continue;
             net.minecraft.client.renderer.item.ItemStackRenderState state = new net.minecraft.client.renderer.item.ItemStackRenderState();

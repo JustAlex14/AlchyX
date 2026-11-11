@@ -48,7 +48,8 @@ final class Motions {
             String anchor = "alchyx_motion_" + n++;
             BlockState look = core.getLevel() == null ? null
                     : ChamberShellBlock.lookAt(core.getLevel(), core.getBlockPos().offset(entry.getKey()));
-            Effect effect = look == null ? null : entry.getValue().effect(anchor, when, look);
+            Effect effect = look == null ? null : entry.getValue().effect(anchor, when, look,
+                    core.setups().getOrDefault(entry.getKey(), com.lealex.alchyx.animation.MotionSetup.ALWAYS));
             if (effect == null) continue;
             anchors.put(anchor, entry.getKey());
             effects.add(effect);

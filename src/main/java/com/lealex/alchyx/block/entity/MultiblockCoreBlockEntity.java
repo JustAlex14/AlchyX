@@ -428,6 +428,7 @@ public abstract class MultiblockCoreBlockEntity extends BlockEntity {
         }
         builtPattern = null;
         motions.clear();
+        setups.clear();
         marks.clear();
         motionsVersion++;
         setRecordedShape(null);
@@ -437,19 +438,26 @@ public abstract class MultiblockCoreBlockEntity extends BlockEntity {
     // ---- Motions a player gave the parts of a free-build machine (animation/Motion), by offset from the core ----
 
     private final Map<BlockPos, com.lealex.alchyx.animation.Motion> motions = new java.util.LinkedHashMap<>();
+    private final Map<BlockPos, com.lealex.alchyx.animation.MotionSetup> setups = new java.util.LinkedHashMap<>(); // a motion's times and state (studio)
     private final List<com.lealex.alchyx.animation.StudioMark> marks = new ArrayList<>(); // anchors: particles, figures
     private int motionsVersion = 0; // changes with every change of the motions or marks (the client's animation follows it)
 
-    private record MotionAt(BlockPos offset, com.lealex.alchyx.animation.Motion motion) {
+    private record MotionAt(BlockPos offset, com.lealex.alchyx.animation.Motion motion, com.lealex.alchyx.animation.MotionSetup setup) {
         static final com.mojang.serialization.Codec<MotionAt> CODEC = com.mojang.serialization.codecs.RecordCodecBuilder.create(instance -> instance.group(
                 BlockPos.CODEC.fieldOf("offset").forGetter(MotionAt::offset),
-                com.lealex.alchyx.animation.Motion.CODEC.fieldOf("motion").forGetter(MotionAt::motion)
+                com.lealex.alchyx.animation.Motion.CODEC.fieldOf("motion").forGetter(MotionAt::motion),
+                com.lealex.alchyx.animation.MotionSetup.CODEC.optionalFieldOf("setup", com.lealex.alchyx.animation.MotionSetup.ALWAYS).forGetter(MotionAt::setup)
         ).apply(instance, MotionAt::new));
     }
 
     /** The motions given to this machine's parts, by offset from the core (read only). */
     public Map<BlockPos, com.lealex.alchyx.animation.Motion> motions() {
         return java.util.Collections.unmodifiableMap(motions);
+    }
+
+    /** When each motion plays and what a change sets (Machine Studio), by offset; a motion without one plays all the time. */
+    public Map<BlockPos, com.lealex.alchyx.animation.MotionSetup> setups() {
+        return java.util.Collections.unmodifiableMap(setups);
     }
 
     /** The anchors a player put with the Machine Studio (particles, figures), read only. */
@@ -476,12 +484,14 @@ public abstract class MultiblockCoreBlockEntity extends BlockEntity {
         com.lealex.alchyx.animation.Motion now = motions.get(offset), next = null;
         if (!clear) {
             BlockState look = com.lealex.alchyx.block.ChamberShellBlock.lookAt(level, pos);
-            List<com.lealex.alchyx.animation.Motion> fitting = rules.motions().stream().filter(m -> m.fits(look)).toList();
+            List<com.lealex.alchyx.animation.Motion> fitting = rules.motions().stream()
+                    .filter(m -> m != com.lealex.alchyx.animation.Motion.CHANGE && m.fits(look)).toList(); // (a change needs the studio)
             int index = now == null ? -1 : fitting.indexOf(now);
             next = index + 1 < fitting.size() ? fitting.get(index + 1) : null;
         }
         if (next == null) motions.remove(offset);
         else motions.put(offset, next);
+        setups.remove(offset);
         motionsVersion++;
         setChanged();
         syncToClients();
@@ -494,16 +504,21 @@ public abstract class MultiblockCoreBlockEntity extends BlockEntity {
      * list, at spots in or right around the build. Returns how many motions and anchors were kept, or -1 if this
      * isn't a formed free-build machine. Server side.
      */
-    public int setStudio(Map<BlockPos, com.lealex.alchyx.animation.Motion> wanted, List<com.lealex.alchyx.animation.StudioMark> wantedMarks) {
+    public int setStudio(Map<BlockPos, com.lealex.alchyx.animation.Motion> wanted, Map<BlockPos, com.lealex.alchyx.animation.MotionSetup> wantedSetups,
+                         List<com.lealex.alchyx.animation.StudioMark> wantedMarks) {
         com.lealex.alchyx.multiblock.FreeBuild rules = freeBuild();
         if (level == null || level.isClientSide() || rules == null || recordedShape == null || !formed) return -1;
         Map<BlockPos, com.lealex.alchyx.animation.Motion> kept = new java.util.LinkedHashMap<>();
+        Map<BlockPos, com.lealex.alchyx.animation.MotionSetup> keptSetups = new java.util.LinkedHashMap<>();
         for (Map.Entry<BlockPos, com.lealex.alchyx.animation.Motion> entry : wanted.entrySet()) {
             if (entry.getValue() == null || !rules.motions().contains(entry.getValue())) continue;
             BlockPos pos = worldPosition.offset(entry.getKey());
             if (!ShellParts.isPart(level.getBlockState(pos)) || !structureContains(pos)) continue;
-            if (!entry.getValue().fits(com.lealex.alchyx.block.ChamberShellBlock.lookAt(level, pos))) continue;
+            BlockState look = com.lealex.alchyx.block.ChamberShellBlock.lookAt(level, pos);
+            if (!entry.getValue().fits(look)) continue;
             kept.put(entry.getKey().immutable(), entry.getValue());
+            com.lealex.alchyx.animation.MotionSetup setup = wantedSetups.getOrDefault(entry.getKey(), com.lealex.alchyx.animation.MotionSetup.ALWAYS).tidy(entry.getValue(), look);
+            if (!setup.equals(com.lealex.alchyx.animation.MotionSetup.ALWAYS)) keptSetups.put(entry.getKey().immutable(), setup);
         }
         BlockPos low = recordedShape.minOffset().offset(-1, -1, -1), high = recordedShape.maxOffset().offset(1, 1, 1);
         List<com.lealex.alchyx.animation.StudioMark> keptMarks = new ArrayList<>();
@@ -521,15 +536,13 @@ public abstract class MultiblockCoreBlockEntity extends BlockEntity {
             };
             if (!allowed || !taken.add(at.immutable())) continue;
             keptMarks.add(new com.lealex.alchyx.animation.StudioMark(at.immutable(), mark.kind(), mark.what(), Math.floorMod(mark.yaw(), 360),
-                    mark.kind() == com.lealex.alchyx.animation.StudioMark.Kind.ITEM ? mark.to().map(BlockPos::immutable) : java.util.Optional.empty(),
-                    mark.times().tidy(), mark.kind() == com.lealex.alchyx.animation.StudioMark.Kind.ITEM
-                            ? mark.items().stream().filter(com.lealex.alchyx.animation.StudioMark::validEntry)
-                                    .limit(com.lealex.alchyx.animation.StudioMark.MAX_ITEMS).toList()
-                            : List.of()));
+                    mark.to().map(BlockPos::immutable), mark.times(), mark.items(), mark.switches()).cleaned());
         }
-        if (!kept.equals(motions) || !keptMarks.equals(marks)) {
+        if (!kept.equals(motions) || !keptSetups.equals(setups) || !keptMarks.equals(marks)) {
             motions.clear();
             motions.putAll(kept);
+            setups.clear();
+            setups.putAll(keptSetups);
             marks.clear();
             marks.addAll(keptMarks);
             motionsVersion++;
@@ -1017,7 +1030,7 @@ public abstract class MultiblockCoreBlockEntity extends BlockEntity {
         if (recordedShape != null) output.store("alchyx_shape", MultiblockPattern.CODEC, recordedShape);
         if (!motions.isEmpty()) {
             List<MotionAt> list = new ArrayList<>();
-            motions.forEach((offset, motion) -> list.add(new MotionAt(offset, motion)));
+            motions.forEach((offset, motion) -> list.add(new MotionAt(offset, motion, setups.getOrDefault(offset, com.lealex.alchyx.animation.MotionSetup.ALWAYS))));
             output.store("alchyx_motions", MotionAt.CODEC.listOf(), list);
         }
         if (!marks.isEmpty()) output.store("alchyx_marks", com.lealex.alchyx.animation.StudioMark.CODEC.listOf(), List.copyOf(marks));
@@ -1055,12 +1068,18 @@ public abstract class MultiblockCoreBlockEntity extends BlockEntity {
             occupied = null;
         }
         Map<BlockPos, com.lealex.alchyx.animation.Motion> read = new java.util.LinkedHashMap<>();
-        input.read("alchyx_motions", MotionAt.CODEC.listOf()).ifPresent(list -> list.forEach(at -> read.put(at.offset(), at.motion())));
+        Map<BlockPos, com.lealex.alchyx.animation.MotionSetup> readSetups = new java.util.LinkedHashMap<>();
+        input.read("alchyx_motions", MotionAt.CODEC.listOf()).ifPresent(list -> list.forEach(at -> {
+            read.put(at.offset(), at.motion());
+            if (!at.setup().equals(com.lealex.alchyx.animation.MotionSetup.ALWAYS)) readSetups.put(at.offset(), at.setup());
+        }));
         List<com.lealex.alchyx.animation.StudioMark> readMarks = input.read("alchyx_marks",
                 com.lealex.alchyx.animation.StudioMark.CODEC.listOf()).orElse(List.of());
-        if (!read.equals(motions) || !readMarks.equals(marks)) {
+        if (!read.equals(motions) || !readSetups.equals(setups) || !readMarks.equals(marks)) {
             motions.clear();
             motions.putAll(read);
+            setups.clear();
+            setups.putAll(readSetups);
             marks.clear();
             marks.addAll(readMarks);
             motionsVersion++;

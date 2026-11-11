@@ -127,6 +127,8 @@ rest of the time the blocks look as they are.
 | `targets` | required | the blocks (a block selector, an anchor or `core`) |
 | `steps` | required | a list of state values: the first shows as the operation begins, the last as it ends. One step = that look for as long as `when` holds. A step may also name `"block"`: another block to show, keeping the state values both share, e.g. `{"block": "minecraft:water_cauldron", "level": 2}` on a plain cauldron |
 
+With `between`, the steps play only in that part of the operation (spread through it), and the blocks look as they are the rest of the time.
+
 On a machine in the world this changes formed parts (the same way as a block move's `swap`). A core block draws
 itself, so a core that changes look does it in its own code there, and gives its file a `block_state` with
 `"where": "miniature"` for the miniatures.
@@ -155,6 +157,7 @@ destructuration chamber):
 | `to` | | a target the item travels to as the operation goes on: at `at` when it begins, at `to` when it ends (an ore carried from the hopper to the press) |
 | `travel` | `[0, 1]` | when in the operation the item leaves `at` and reaches `to` |
 | `items` | | shown in turn through the operation (or its `between`) instead of one display: item ids, or display names, e.g. `["input", "minecraft:cobblestone", "minecraft:gravel"]`; `display` may then be left out |
+| `item_times` | | when each of `items` comes, in fractions of the operation, one per item, e.g. `[0, 0.3, 0.9]`; without it they share the time evenly |
 
 ## `figure`
 

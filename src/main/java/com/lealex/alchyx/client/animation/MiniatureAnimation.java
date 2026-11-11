@@ -381,6 +381,7 @@ public final class MiniatureAnimation {
             for (Effect effect : animation.effects()) {
                 if (!(effect instanceof Effect.StateSteps steps) || !steps.timing().where().miniature()) continue;
                 if (!steps.holds(working) || !steps.timing().levelsMet(state::level)) continue;
+                if (!steps.timing().within(working, state.progress())) continue; // "between"
                 Map<String, String> values = steps.steps().get(steps.index(state.progress()));
                 for (BlockPos cell : cells(steps.targets())) {
                     BlockState look = looks.get(cell);

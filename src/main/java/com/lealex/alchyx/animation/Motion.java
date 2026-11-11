@@ -52,7 +52,12 @@ public enum Motion implements StringRepresentable {
     /** Grows as the work goes on: crops, saplings' stages, anything with an "age" (modded crops too). */
     GROW("grow", "up", List.of()),
     /** Opens (barrels, trapdoors, doors, fence gates). */
-    OPEN("open", "up", List.of());
+    OPEN("open", "up", List.of()),
+    /**
+     * Takes the state values its player picked (see {@link MotionSetup}): any block with a state, modded ones too
+     * (a trial spawner turned active, a vault ejecting, a lamp lit...).
+     */
+    CHANGE("change", "up", List.of());
 
     /** The state numbers that say how full a block is, by name (vanilla's and most mods'). */
     private static final List<String> FILL_PROPERTIES = List.of("level", "honey_level", "charges", "layers", "pickles", "candles",
@@ -100,6 +105,7 @@ public enum Motion implements StringRepresentable {
             case LIGHT -> look.hasProperty(BlockStateProperties.LIT);
             case OPEN -> look.hasProperty(BlockStateProperties.OPEN);
             case FILL, FILL_LAVA, FILL_SNOW, GROW -> !steps(look).isEmpty();
+            case CHANGE -> !look.getProperties().isEmpty();
             default -> true;
         };
     }
@@ -170,21 +176,33 @@ public enum Motion implements StringRepresentable {
      * while {@code when} holds. Null if that block can't do it.
      */
     public @org.jspecify.annotations.Nullable Effect effect(String anchor, Trigger when, BlockState look) {
+        return effect(anchor, when, look, MotionSetup.ALWAYS);
+    }
+
+    /** The same, as {@code setup} says: only in its window of the work, and for a change, the state it picked. */
+    public @org.jspecify.annotations.Nullable Effect effect(String anchor, Trigger when, BlockState look, MotionSetup setup) {
         Target target = new Target(Optional.of(anchor), Optional.empty(), Map.of(), Vec3.ZERO);
+        float from = setup.from() / 100.0F, until = setup.until() / 100.0F;
         if (!moves()) {
-            List<Map<String, String>> steps = steps(look);
+            List<Map<String, String>> steps = steps(look, setup);
             if (steps.isEmpty()) return null;
-            return new Effect.StateSteps(new Timing(when, 1, 1.0F, 0, Map.of(), Timing.Where.EVERYWHERE), target, steps);
+            return new Effect.StateSteps(new Timing(when, 1, 1.0F, 0, Map.of(), Timing.Where.EVERYWHERE).between(from, until), target, steps);
         }
         if (this == STRIKE && isPiston(look)) {
             String head = look.is(Blocks.STICKY_PISTON) ? "sticky" : "normal";
-            Timing timing = new Timing(when, PISTON_EVERY, 1.0F, 0, Map.of(), Timing.Where.EVERYWHERE);
+            Timing timing = new Timing(when, PISTON_EVERY, 1.0F, 0, Map.of(), Timing.Where.EVERYWHERE).between(from, until);
             return new Effect.BlockMove(timing, target, Optional.of(new BlockLook(Blocks.PISTON_HEAD, Map.of("type", head))),
                     "facing", true, Map.of("extended", "true"), PISTON, false);
         }
         int loop = Math.max(1, (int) Keyframe.duration(keyframes));
-        Timing timing = new Timing(when, loop, 1.0F, 0, Map.of(), Timing.Where.EVERYWHERE);
+        Timing timing = new Timing(when, loop, 1.0F, 0, Map.of(), Timing.Where.EVERYWHERE).between(from, until);
         return new Effect.BlockMove(timing, target, Optional.empty(), direction, false, Map.of(), keyframes, true);
+    }
+
+    /** The looks a change goes through, as {@code setup} says (a change: the state it picked, or none). */
+    public List<Map<String, String>> steps(BlockState look, MotionSetup setup) {
+        if (this == CHANGE) return setup.state().isEmpty() ? List.of() : List.of(setup.state());
+        return steps(look);
     }
 
     /** The piston strike's keyframes (the head's way out and back), for previews. */

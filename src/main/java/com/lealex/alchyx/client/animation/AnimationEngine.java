@@ -229,7 +229,8 @@ public final class AnimationEngine {
      */
     private static void stateSteps(ClientLevel level, MultiblockCoreBlockEntity core, Runtime rt, int index, Effect.StateSteps effect,
                                    boolean working, long now) {
-        boolean holds = effect.holds(working) && effect.timing().levelsMet(core::getAnimationLevel);
+        boolean holds = effect.holds(working) && effect.timing().levelsMet(core::getAnimationLevel)
+                && effect.timing().within(working, core.getAnimationProgress(now)); // "between"
         int step = holds ? effect.index(core.getAnimationProgress(now)) : -1;
         if (step == rt.steps[index]) return;
         rt.steps[index] = step;

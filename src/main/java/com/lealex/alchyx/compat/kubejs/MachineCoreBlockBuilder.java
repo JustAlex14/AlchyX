@@ -56,11 +56,20 @@ public class MachineCoreBlockBuilder extends CardinalBlockBuilder {
     }
 
     /**
-     * What an input slot takes: item ids and {@code #tag}s, e.g. {@code .slotFilter(1, 'minecraft:blaze_powder')} or
-     * {@code .slotFilter(0, ['minecraft:egg', '#c:eggs'])}. Players, hoppers and pipes can't put anything else in.
+     * What an input slot takes: an item id or {@code #tag}, or a list of them, e.g.
+     * {@code .slotFilter(1, 'minecraft:blaze_powder')} or {@code .slotFilter(0, ['minecraft:egg', '#c:eggs'])}.
+     * Players, hoppers and pipes can't put anything else in.
      */
-    public MachineCoreBlockBuilder slotFilter(int slot, String... items) {
-        slotFilters.put(slot, java.util.List.of(items));
+    public MachineCoreBlockBuilder slotFilter(int slot, Object items) {
+        java.util.List<String> list = new java.util.ArrayList<>();
+        if (items instanceof Iterable<?> many) {
+            for (Object item : many) if (item != null) list.add(String.valueOf(item));
+        } else if (items instanceof Object[] many) {
+            for (Object item : many) if (item != null) list.add(String.valueOf(item));
+        } else if (items != null) {
+            list.add(String.valueOf(items));
+        }
+        slotFilters.put(slot, java.util.List.copyOf(list));
         return this;
     }
 
@@ -96,6 +105,7 @@ public class MachineCoreBlockBuilder extends CardinalBlockBuilder {
     public Block createObject() {
         MachineSpec spec = new MachineSpec(pattern != null ? pattern : id, recipeType != null ? recipeType : id,
                 itemInputs, itemOutputs, fluidInputs, fluidOutputs, tankCapacity, energyCapacity, energyInput, slotFilters);
+        if (!spec.slotFilters().isEmpty()) com.lealex.alchyx.AlchyX.LOGGER.info("AlchyX: {} slot filters {}", id, spec.slotFilters());
         return new ScriptedCoreBlock(createProperties(), spec);
     }
 }

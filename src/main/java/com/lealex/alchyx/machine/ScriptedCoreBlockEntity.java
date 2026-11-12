@@ -217,6 +217,8 @@ public class ScriptedCoreBlockEntity extends MultiblockCoreBlockEntity implement
             return;
         }
         if (!inputsPresent(recipe) || !outputsFit(recipe)) {
+            com.lealex.alchyx.AlchyX.LOGGER.debug("AlchyX: {} stopped {}: {}", getBlockPos(), currentRecipe,
+                    inputsPresent(recipe) ? "its outputs don't fit" : "its inputs are gone", items.copyToList());
             resetOperation();
             setAnimationWorking(false);
             return;

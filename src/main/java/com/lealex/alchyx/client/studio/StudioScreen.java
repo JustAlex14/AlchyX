@@ -223,10 +223,10 @@ public class StudioScreen extends Screen {
             }).bounds(x, y, 80, 20).build());
             own.setTooltip(Tooltip.create(Component.literal("The machine's own animation (its mod's files): on, playing with what you make here, or off, so only yours plays (Save to keep it)")));
             x += 84;
-            Button export = addRenderableWidget(Button.builder(Component.literal("Export"), b -> export()).bounds(x, y, 50, 20).build());
+            Button export = addRenderableWidget(Button.builder(Component.literal("Export"), b -> openFiles(true)).bounds(x, y, 50, 20).build());
             export.setTooltip(Tooltip.create(Component.literal("Write what you made here as an animation file for a datapack: every machine of this kind plays it")));
             x += 54;
-            Button bring = addRenderableWidget(Button.builder(Component.literal("Import"), b -> importFile()).bounds(x, y, 50, 20).build());
+            Button bring = addRenderableWidget(Button.builder(Component.literal("Import"), b -> openFiles(false)).bounds(x, y, 50, 20).build());
             bring.setTooltip(Tooltip.create(Component.literal("Bring back a file Export made (alchyx_exports), to change it here. Save to keep it")));
         }
         addRenderableWidget(Button.builder(Component.literal("Close"), b -> onClose()).bounds(width - MARGIN - 50, y, 50, 20).build());
@@ -731,10 +731,10 @@ public class StudioScreen extends Screen {
 
     /**
      * Writes what's made here (as it stands in the studio, saved or not) as an animation file for a datapack, in the
-     * game folder: alchyx_exports/<namespace>/machine_animation/<machine>_studio.json. Every machine of this kind
+     * game folder (alchyx_exports/<namespace>/machine_animation/, under the name picked in the Export window). Every machine of this kind
      * then plays it; with its own animation off, the file replaces the mod's ("replace": true).
      */
-    private void export() {
+    private void exportTo(java.nio.file.Path path) {
         Minecraft minecraft = Minecraft.getInstance();
         if (minecraft.level == null || !(minecraft.level.getBlockEntity(corePos) instanceof MultiblockCoreBlockEntity core)) return;
         Map<BlockPos, Motion> motions = new LinkedHashMap<>();
@@ -763,7 +763,6 @@ public class StudioScreen extends Screen {
                     .turned(MultiblockPattern.inverse(core.rotation()));
             json.getAsJsonObject().add("alchyx_studio", com.lealex.alchyx.animation.StudioSave.CODEC
                     .encodeStart(com.mojang.serialization.JsonOps.INSTANCE, studio).getOrThrow());
-            java.nio.file.Path path = exportPath(machine);
             java.nio.file.Files.createDirectories(path.getParent());
             java.nio.file.Files.writeString(path, new com.google.gson.GsonBuilder().setPrettyPrinting().create().toJson(json));
             message = "Exported to " + minecraft.gameDirectory.toPath().relativize(path).toString().replace('\\', '/')
@@ -775,20 +774,35 @@ public class StudioScreen extends Screen {
         if (minecraft.player != null) minecraft.player.sendSystemMessage(Component.literal(message));
     }
 
-    /** Where Export writes this machine's file, and Import reads it. */
-    private static java.nio.file.Path exportPath(Identifier machine) {
-        return Minecraft.getInstance().gameDirectory.toPath().resolve("alchyx_exports").resolve(machine.getNamespace())
-                .resolve("machine_animation").resolve(machine.getPath() + "_studio.json");
+    /** The exports folder in the game folder. */
+    private static java.nio.file.Path exportRoot() {
+        return Minecraft.getInstance().gameDirectory.toPath().resolve("alchyx_exports");
+    }
+
+    /** The Export or Import window: a file name to write, or a file to bring in. */
+    private void openFiles(boolean exporting) {
+        Minecraft minecraft = Minecraft.getInstance();
+        if (minecraft.level == null || !(minecraft.level.getBlockEntity(corePos) instanceof MultiblockCoreBlockEntity core)) return;
+        Identifier machine = core.patternId();
+        java.nio.file.Path folder = exportRoot().resolve(machine.getNamespace()).resolve("machine_animation");
+        String path = machine.getPath();
+        java.nio.file.Path inner = folder;
+        int slash = path.lastIndexOf('/');
+        if (slash >= 0) {
+            inner = folder.resolve(path.substring(0, slash));
+            path = path.substring(slash + 1);
+        }
+        minecraft.setScreen(new StudioFileScreen(this, exporting, exportRoot(), inner, core.getBlockState().getBlock().getName().getString(),
+                path + "_studio", exporting ? this::exportTo : this::importFrom));
     }
 
     /**
      * Brings an exported file back into the studio (its "alchyx_studio" part), in place of what's here: its motions,
      * anchors and whether the machine's own animation is off. Nothing changes on the machine until Save.
      */
-    private void importFile() {
+    private void importFrom(java.nio.file.Path path) {
         Minecraft minecraft = Minecraft.getInstance();
         if (minecraft.level == null || !(minecraft.level.getBlockEntity(corePos) instanceof MultiblockCoreBlockEntity core)) return;
-        java.nio.file.Path path = exportPath(core.patternId());
         String relative = minecraft.gameDirectory.toPath().relativize(path).toString().replace('\\', '/');
         String message;
         try {
@@ -831,6 +845,10 @@ public class StudioScreen extends Screen {
                     rebuildWidgets();
                     message = "Imported " + relative + ": " + edits.size() + " moving blocks, " + marks.size() + " anchors"
                             + (skipped > 0 ? " (" + skipped + " didn't fit this machine)" : "") + ". Save to keep it";
+                    com.google.gson.JsonElement madeFor = json.getAsJsonObject().get("machine");
+                    if (madeFor != null && madeFor.isJsonPrimitive() && !madeFor.getAsString().equals(core.patternId().toString())) {
+                        message += ". It was made for " + madeFor.getAsString() + ", so things may sit oddly";
+                    }
                 }
             }
         } catch (Exception e) {

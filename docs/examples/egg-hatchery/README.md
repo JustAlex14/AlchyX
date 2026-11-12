@@ -62,7 +62,7 @@ Sneak and right-click the formed core with an empty hand: the Machine Studio ope
   - smoke over the smoker;
   - happy sparks where the egg hatches.
 - **Mobs**:
-  - a witch in front swings her arm all the time;
+  - a witch in front drinks a potion every few seconds (the "swing" action: a witch has no arm strike);
   - a chicken walks across the pen until the egg goes up (a "walk to" action);
   - a cat sits by the door;
   - a parrot flaps its wings on the roof;

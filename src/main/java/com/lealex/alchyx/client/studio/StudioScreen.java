@@ -1247,7 +1247,7 @@ public class StudioScreen extends Screen implements com.lealex.alchyx.client.ani
     }
 
     /** What a figure can do, in the order the Action button goes through them ("walk to": walks to a spot picked next). */
-    private static final List<String> ACTIONS = List.of("still", "walk", "walk to", "swing", "flap", "hop", "spin");
+    private static final List<String> ACTIONS = List.of("still", "walk", "walk to", "swing", "flap", "hop", "spin", "sit");
 
     private static String actionName(StudioMark mark) {
         Effect.FigureAction action = mark.action();
@@ -2546,6 +2546,7 @@ public class StudioScreen extends Screen implements com.lealex.alchyx.client.ani
                     living.yBodyRot = living.yBodyRotO = yaw;
                     living.yHeadRot = living.yHeadRotO = yaw;
                 }
+                com.lealex.alchyx.client.animation.FigureDrawer.beforeExtract(entity, action, time);
                 EntityRenderState state = Minecraft.getInstance().getEntityRenderDispatcher().extractEntity(entity, partialTicks);
                 state.shadowPieces.clear();
                 state.shadowRadius = 0;

@@ -317,7 +317,8 @@ public sealed interface Effect permits Effect.Particle, Effect.Sound, Effect.Blo
      *   <li>"display" / "unless_display": only while the machine's display of that name holds an item / is empty
      *       (e.g. a linked player);</li>
      *   <li>"action": what it does ({@link FigureAction}): "still", "walk" (its legs move), "swing" (an arm strikes:
-     *       witches, villagers, illagers, zombies...), "flap" (a chicken's or a parrot's wings), "hop", "spin";</li>
+     *       villagers, illagers, zombies...; a witch drinks a potion), "flap" (a chicken's or a parrot's wings), "hop",
+     *       "spin", "sit" (cats, ocelots, wolves, parrots);</li>
      *   <li>"to": a spot it walks to through its time (from the start of its "between" window to its end), facing
      *       the way it goes.</li>
      * </ul>
@@ -360,9 +361,9 @@ public sealed interface Effect permits Effect.Particle, Effect.Sound, Effect.Blo
         }
     }
 
-    /** What a figure does: stands still, walks, swings an arm, flaps its wings, hops, or spins around. */
+    /** What a figure does: stands still, walks, swings an arm, flaps its wings, hops, spins around, or sits. */
     enum FigureAction implements StringRepresentable {
-        STILL("still"), WALK("walk"), SWING("swing"), FLAP("flap"), HOP("hop"), SPIN("spin");
+        STILL("still"), WALK("walk"), SWING("swing"), FLAP("flap"), HOP("hop"), SPIN("spin"), SIT("sit");
 
         public static final Codec<FigureAction> CODEC = StringRepresentable.fromEnum(FigureAction::values);
         private final String id;

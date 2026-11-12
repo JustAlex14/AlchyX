@@ -100,6 +100,7 @@ public final class FigureDrawer {
             living.yBodyRot = living.yBodyRotO = yaw;
             living.yHeadRot = living.yHeadRotO = headYaw;
         }
+        beforeExtract(entity, effect.action(), time);
         EntityRenderState state = Minecraft.getInstance().getEntityRenderDispatcher().extractEntity(entity, partialTicks);
         state.shadowPieces.clear(); // it's drawn at a pose, not where the entity "is": no shadow, no name
         state.shadowRadius = 0;
@@ -112,7 +113,25 @@ public final class FigureDrawer {
         return new Prepared(state, null, context, yaw, effect.scale(), lift);
     }
 
-    /** Puts the figure's action on its render state: legs walking, an arm swinging, wings flapping. */
+    /**
+     * What an action needs on the entity itself, before its render state is made: a witch "swings" by drinking a
+     * potion (its arms are crossed: it has no strike), so it holds one for a while every few seconds.
+     */
+    public static void beforeExtract(net.minecraft.world.entity.Entity entity, Effect.FigureAction action, float time) {
+        if (entity instanceof net.minecraft.world.entity.monster.Witch witch) {
+            boolean drinking = action == Effect.FigureAction.SWING && time % 60.0F < 32.0F;
+            ItemStack hand = witch.getMainHandItem();
+            if (drinking && hand.isEmpty()) {
+                witch.setItemSlot(net.minecraft.world.entity.EquipmentSlot.MAINHAND,
+                        net.minecraft.world.item.alchemy.PotionContents.createItemStack(net.minecraft.world.item.Items.POTION,
+                                net.minecraft.world.item.alchemy.Potions.HEALING));
+            } else if (!drinking && !hand.isEmpty()) {
+                witch.setItemSlot(net.minecraft.world.entity.EquipmentSlot.MAINHAND, ItemStack.EMPTY);
+            }
+        }
+    }
+
+    /** Puts the figure's action on its render state: legs walking, an arm swinging, wings flapping, sitting. */
     public static void act(EntityRenderState state, Effect.FigureAction action, float time) {
         if (!(state instanceof LivingEntityRenderState living)) return;
         switch (action) {
@@ -129,7 +148,6 @@ public final class FigureDrawer {
                     illager.isAggressive = true;
                 }
                 if (state instanceof net.minecraft.client.renderer.entity.state.ZombieRenderState zombie) zombie.isAggressive = true;
-                if (state instanceof net.minecraft.client.renderer.entity.state.WitchRenderState witch) witch.isHoldingItem = true; // (its nose and arms)
                 if (state instanceof net.minecraft.client.renderer.entity.state.VillagerRenderState villager) villager.isUnhappy = attack > 0;
             }
             case FLAP -> {
@@ -138,6 +156,12 @@ public final class FigureDrawer {
                     chicken.flapSpeed = 1.0F;
                 }
                 if (state instanceof net.minecraft.client.renderer.entity.state.ParrotRenderState parrot) parrot.flapAngle = time * 0.9F;
+            }
+            case SIT -> {
+                if (state instanceof net.minecraft.client.renderer.entity.state.FelineRenderState feline) feline.isSitting = true;
+                if (state instanceof net.minecraft.client.renderer.entity.state.WolfRenderState wolf) wolf.isSitting = true;
+                if (state instanceof net.minecraft.client.renderer.entity.state.ParrotRenderState parrot)
+                    parrot.pose = net.minecraft.client.model.animal.parrot.ParrotModel.Pose.SITTING;
             }
             default -> { }
         }

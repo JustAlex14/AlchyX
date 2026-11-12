@@ -1,8 +1,11 @@
-// The Egg Hatchery's recipe takes an egg and gives nothing: this script puts a random spawn egg in its output slot.
+// The Egg Hatchery's recipe takes an egg and gives nothing: this script decides, as the operation starts, which
+// spawn egg it will give. The spawner on top shows that mob turning inside it while the egg hatches, the "result"
+// display (the item anchors that float "output"/"result") shows the spawn egg, and the same egg comes out at the end.
 // Slots: inputs first (slot 0: the egg), then outputs (slot 1: the spawn egg).
 
 const HATCHERY = 'mypack:egg_hatchery_core'
 const OUTPUT_SLOT = 1
+const SPAWNER = 'spawner' // the pattern's anchor on the spawner (see data/mypack/multiblock/egg_hatchery.json)
 // Never these (bosses, and things that make no sense out of an egg)
 const NEVER = ['minecraft:ender_dragon_spawn_egg', 'minecraft:wither_spawn_egg', 'minecraft:elder_guardian_spawn_egg',
   'minecraft:warden_spawn_egg']
@@ -29,13 +32,32 @@ function spawnEggs() {
   return eggs
 }
 
-// Wait until the last spawn egg was taken out: two different eggs can't share the slot
+function randomEgg() {
+  let list = spawnEggs()
+  return list[Math.floor(Math.random() * list.length)]
+}
+
+// "minecraft:chicken_spawn_egg" -> "minecraft:chicken" (most mods name their eggs the same way)
+function mobOf(eggId) {
+  return eggId.replace(/_spawn_egg$/, '')
+}
+
 AlchyXEvents.operationStarting(HATCHERY, event => {
-  if (!event.machine.getItem(OUTPUT_SLOT).isEmpty()) event.cancel()
+  // Wait until the last spawn egg was taken out: two different eggs can't share the slot
+  if (!event.machine.getItem(OUTPUT_SLOT).isEmpty()) {
+    event.cancel()
+    return
+  }
+  // Pick the egg now, so the spawner and the floating egg show it while it hatches
+  let egg = randomEgg()
+  event.machine.setDisplay('result', Item.of(egg))
+  event.machine.setSpawnerMob(SPAWNER, mobOf(egg))
 })
 
 AlchyXEvents.operationFinished(HATCHERY, event => {
-  let list = spawnEggs()
-  let id = list[Math.floor(Math.random() * list.length)]
-  event.machine.setItem(OUTPUT_SLOT, Item.of(id))
+  // The egg picked as it started (a random one if the game restarted in between)
+  let shown = event.machine.getDisplay('result')
+  let egg = shown.isEmpty() ? randomEgg() : String(shown.id)
+  event.machine.setItem(OUTPUT_SLOT, Item.of(egg))
+  // The spawner keeps showing the last mob until the next egg starts
 })

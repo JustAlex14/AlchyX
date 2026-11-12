@@ -315,12 +315,25 @@ public sealed interface Effect permits Effect.Particle, Effect.Sound, Effect.Blo
      *   <li>"hover": blocks above the floor, "bob": up-down amplitude in blocks, "scale";</li>
      *   <li>"ghost": drawn see-through (entities: vanilla's invisible-mob look);</li>
      *   <li>"display" / "unless_display": only while the machine's display of that name holds an item / is empty
-     *       (e.g. a linked player).</li>
+     *       (e.g. a linked player);</li>
+     *   <li>"action": what it does ({@link FigureAction}): "still", "walk" (its legs move), "swing" (an arm strikes:
+     *       witches, villagers, illagers, zombies...), "flap" (a chicken's or a parrot's wings), "hop", "spin";</li>
+     *   <li>"to": a spot it walks to through its time (from the start of its "between" window to its end), facing
+     *       the way it goes.</li>
      * </ul>
      */
     record Figure(Timing timing, Optional<Identifier> entity, Optional<String> nbt, Optional<Identifier> figure, Target at,
                   Optional<Target> face, Optional<Float> yaw, boolean lookAtPlayer, float hover, float bob, float scale,
-                  boolean ghost, Optional<String> display, Optional<String> unlessDisplay) implements Effect {
+                  boolean ghost, Optional<String> display, Optional<String> unlessDisplay, FigureAction action,
+                  Optional<Target> to) implements Effect {
+        /** A figure that stands still where it is. */
+        public Figure(Timing timing, Optional<Identifier> entity, Optional<String> nbt, Optional<Identifier> figure, Target at,
+                      Optional<Target> face, Optional<Float> yaw, boolean lookAtPlayer, float hover, float bob, float scale,
+                      boolean ghost, Optional<String> display, Optional<String> unlessDisplay) {
+            this(timing, entity, nbt, figure, at, face, yaw, lookAtPlayer, hover, bob, scale, ghost, display, unlessDisplay,
+                    FigureAction.STILL, Optional.empty());
+        }
+
         public static final MapCodec<Figure> MAP_CODEC = RecordCodecBuilder.<Figure>mapCodec(instance -> instance.group(
                 Timing.MAP_CODEC.forGetter(Figure::timing),
                 Identifier.CODEC.optionalFieldOf("entity").forGetter(Figure::entity),
@@ -335,13 +348,37 @@ public sealed interface Effect permits Effect.Particle, Effect.Sound, Effect.Blo
                 Codec.floatRange(0.01F, 16.0F).optionalFieldOf("scale", 1.0F).forGetter(Figure::scale),
                 Codec.BOOL.optionalFieldOf("ghost", false).forGetter(Figure::ghost),
                 Codec.STRING.optionalFieldOf("display").forGetter(Figure::display),
-                Codec.STRING.optionalFieldOf("unless_display").forGetter(Figure::unlessDisplay)
+                Codec.STRING.optionalFieldOf("unless_display").forGetter(Figure::unlessDisplay),
+                FigureAction.CODEC.optionalFieldOf("action", FigureAction.STILL).forGetter(Figure::action),
+                Target.CODEC.optionalFieldOf("to").forGetter(Figure::to)
         ).apply(instance, Figure::new)).validate(f -> f.entity.isPresent() != f.figure.isPresent() ? DataResult.success(f)
                 : DataResult.error(() -> "a figure needs exactly one of \"entity\" or \"figure\""));
 
         @Override
         public String type() {
             return "figure";
+        }
+    }
+
+    /** What a figure does: stands still, walks, swings an arm, flaps its wings, hops, or spins around. */
+    enum FigureAction implements StringRepresentable {
+        STILL("still"), WALK("walk"), SWING("swing"), FLAP("flap"), HOP("hop"), SPIN("spin");
+
+        public static final Codec<FigureAction> CODEC = StringRepresentable.fromEnum(FigureAction::values);
+        private final String id;
+
+        FigureAction(String id) {
+            this.id = id;
+        }
+
+        public static FigureAction byName(@org.jspecify.annotations.Nullable String name) {
+            for (FigureAction action : values()) if (action.id.equals(name)) return action;
+            return STILL;
+        }
+
+        @Override
+        public String getSerializedName() {
+            return id;
         }
     }
 }

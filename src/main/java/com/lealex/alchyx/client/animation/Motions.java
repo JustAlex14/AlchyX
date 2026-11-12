@@ -85,10 +85,21 @@ public final class Motions {
     /** The same from these motions, setups and anchors (offsets from the core at {@code corePos}, as in the world). */
     public static Layer layer(net.minecraft.world.level.@Nullable Level level, BlockPos corePos, Map<BlockPos, Motion> motions,
                               Map<BlockPos, MotionSetup> setups, java.util.Collection<StudioMark> marks, Trigger when, Rotation rotation) {
+        return layer(level, corePos, motions, setups, marks, Map.of(), when, rotation);
+    }
+
+    /**
+     * The same, with the blocks the Shape tab reshaped as effects too (for a file: on the machine itself the engine
+     * draws them reshaped all the time): a moving block moves reshaped, a still one stands reshaped all the time.
+     */
+    public static Layer layer(net.minecraft.world.level.@Nullable Level level, BlockPos corePos, Map<BlockPos, Motion> motions,
+                              Map<BlockPos, MotionSetup> setups, java.util.Collection<StudioMark> marks,
+                              Map<BlockPos, com.lealex.alchyx.animation.BlockPose> poses, Trigger when, Rotation rotation) {
         Rotation back = MultiblockPattern.inverse(rotation);
         int turn = quarter(back) * 90;
         List<Effect> effects = new ArrayList<>();
         Map<String, BlockPos> anchors = new java.util.LinkedHashMap<>();
+        java.util.Set<BlockPos> posed = new java.util.HashSet<>();
         int n = 0;
         for (Map.Entry<BlockPos, Motion> entry : motions.entrySet()) {
             String anchor = "alchyx_motion_" + n++;
@@ -96,8 +107,25 @@ public final class Motions {
             Effect effect = look == null ? null : entry.getValue().effect(anchor, when, look,
                     setups.getOrDefault(entry.getKey(), MotionSetup.ALWAYS));
             if (effect == null) continue;
+            com.lealex.alchyx.animation.BlockPose pose = poses.get(entry.getKey());
+            if (pose != null && effect instanceof Effect.BlockMove move && move.hide() && move.draw().isEmpty()) {
+                effect = new Effect.BlockMove(move.timing(), move.targets(), move.draw(), move.direction(), move.align(), move.swap(),
+                        pose.apply(move.keyframes(), com.lealex.alchyx.animation.BlockPose.turn(pose.offset(), back)), true);
+                posed.add(entry.getKey());
+            }
             anchors.put(anchor, entry.getKey().rotate(back));
             effects.add(effect);
+        }
+        n = 0;
+        for (Map.Entry<BlockPos, com.lealex.alchyx.animation.BlockPose> entry : poses.entrySet()) {
+            if (posed.contains(entry.getKey())) continue;
+            String anchor = "alchyx_pose_" + n++;
+            com.lealex.alchyx.animation.BlockPose pose = entry.getValue();
+            effects.add(new Effect.BlockMove(new com.lealex.alchyx.animation.Timing(Trigger.ALWAYS, 20, 1.0F, 0, Map.of(),
+                    com.lealex.alchyx.animation.Timing.Where.EVERYWHERE), new com.lealex.alchyx.animation.Target(Optional.of(anchor),
+                    Optional.empty(), Map.of(), net.minecraft.world.phys.Vec3.ZERO), Optional.empty(), "up", false, Map.of(),
+                    pose.still(com.lealex.alchyx.animation.BlockPose.turn(pose.offset(), back)), true));
+            anchors.put(anchor, entry.getKey().rotate(back));
         }
         n = 0;
         for (StudioMark mark : marks) {

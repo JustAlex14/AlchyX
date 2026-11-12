@@ -66,6 +66,8 @@ public final class FigureDrawer {
         if (effect.unlessDisplay().isPresent() && !displays.apply(effect.unlessDisplay().get()).isEmpty()) return null;
 
         float lift = effect.hover() + (effect.bob() == 0 ? 0 : Mth.sin(time * 0.08F) * effect.bob());
+        if (effect.action() == Effect.FigureAction.HOP) lift += Math.abs(Mth.sin(time * 0.25F)) * 0.35F;
+        if (effect.action() == Effect.FigureAction.SPIN) yaw = Mth.wrapDegrees(yaw + time * 6.0F);
         int light = LevelRenderer.getLightCoords(level, BlockPos.containing(feet.add(0, 0.5, 0)));
         ItemStack display = effect.display().map(displays).orElse(ItemStack.EMPTY);
         CodedFigure.Context context = new CodedFigure.Context(display, working, time, light, owner, feet, yaw, partialTicks);
@@ -102,11 +104,43 @@ public final class FigureDrawer {
         state.shadowPieces.clear(); // it's drawn at a pose, not where the entity "is": no shadow, no name
         state.shadowRadius = 0;
         state.nameTag = null;
+        act(state, effect.action(), time);
         if (effect.ghost() && state instanceof LivingEntityRenderState livingState) {
             livingState.isInvisible = true;          // vanilla draws an invisible mob see-through when the player
             livingState.isInvisibleToPlayer = false; // may see it (spectators): that's the ghost look
         }
         return new Prepared(state, null, context, yaw, effect.scale(), lift);
+    }
+
+    /** Puts the figure's action on its render state: legs walking, an arm swinging, wings flapping. */
+    public static void act(EntityRenderState state, Effect.FigureAction action, float time) {
+        if (!(state instanceof LivingEntityRenderState living)) return;
+        switch (action) {
+            case WALK -> {
+                living.walkAnimationPos = time * 0.6F;
+                living.walkAnimationSpeed = 0.8F;
+            }
+            case SWING -> {
+                float swing = (time % 20.0F) / 8.0F; // a strike every second, a little under half a second long
+                float attack = swing < 1 ? swing : 0;
+                if (state instanceof net.minecraft.client.renderer.entity.state.ArmedEntityRenderState armed) armed.attackTime = attack;
+                if (state instanceof net.minecraft.client.renderer.entity.state.IllagerRenderState illager) {
+                    illager.attackAnim = attack;
+                    illager.isAggressive = true;
+                }
+                if (state instanceof net.minecraft.client.renderer.entity.state.ZombieRenderState zombie) zombie.isAggressive = true;
+                if (state instanceof net.minecraft.client.renderer.entity.state.WitchRenderState witch) witch.isHoldingItem = true; // (its nose and arms)
+                if (state instanceof net.minecraft.client.renderer.entity.state.VillagerRenderState villager) villager.isUnhappy = attack > 0;
+            }
+            case FLAP -> {
+                if (state instanceof net.minecraft.client.renderer.entity.state.ChickenRenderState chicken) {
+                    chicken.flap = time * 0.9F;
+                    chicken.flapSpeed = 1.0F;
+                }
+                if (state instanceof net.minecraft.client.renderer.entity.state.ParrotRenderState parrot) parrot.flapAngle = time * 0.9F;
+            }
+            default -> { }
+        }
     }
 
     private static @Nullable Entity entity(Object owner, int index, ClientLevel level, Effect.Figure effect) {

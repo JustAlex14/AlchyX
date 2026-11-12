@@ -54,6 +54,12 @@ public abstract class MultiblockCoreBlock extends Block implements EntityBlock {
     // Right-click (empty hand, or an item the block doesn't react to): the machine's GUI or status
     @Override
     protected InteractionResult useWithoutItem(BlockState state, Level level, BlockPos pos, Player player, BlockHitResult hit) {
+        // Sneak + right-click with an empty hand on a finished machine: the Machine Studio
+        if (player.isShiftKeyDown() && level.getBlockEntity(pos) instanceof MultiblockCoreBlockEntity own
+                && com.lealex.alchyx.multiblock.MachineStudio.opens(own)) {
+            if (level.isClientSide()) com.lealex.alchyx.multiblock.MachineStudio.clientOpen.accept(pos.immutable());
+            return InteractionResult.SUCCESS;
+        }
         if (!level.isClientSide() && owner(level, pos) instanceof MultiblockCoreBlockEntity core) {
             core.openGui(player);
         }

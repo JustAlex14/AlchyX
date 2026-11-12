@@ -20,7 +20,7 @@
     ],
     "marks": [
       {"offset": [0, 0, 1], "kind": "item", "id": "input", "to": [0, 1, 1],
-       "items": ["input", "minecraft:egg", "output"],
+       "items": ["input", "minecraft:egg", "result"],
        "shows": [
          {"from": 0, "until": 40, "style": "spin"},
          {"from": 40, "until": 60, "style": "travel"},
@@ -28,13 +28,21 @@
        ]},
       {"offset": [0, 2, 1], "kind": "particles", "id": "minecraft:soul_fire_flame", "times": {"show_from": 20, "show_until": 80}},
       {"offset": [0, -1, 1], "kind": "particles", "id": "minecraft:bubble_pop", "times": {"show_from": 5, "show_until": 55}},
-      {"offset": [1, 0, -1], "kind": "figure", "id": "minecraft:witch", "yaw": 0},
-      {"offset": [-1, 0, -1], "kind": "figure", "id": "minecraft:chicken", "yaw": 0, "times": {"show_from": 0, "show_until": 40}},
+      {"offset": [1, 0, -1], "kind": "figure", "id": "minecraft:witch", "yaw": 0, "action": "swing"},
+      {"offset": [-2, 0, -1], "kind": "figure", "id": "minecraft:chicken", "yaw": 0, "action": "walk", "to": [0, 0, -1],
+       "times": {"show_from": 0, "show_until": 40}},
+      {"offset": [-1, 2, 1], "kind": "figure", "id": "minecraft:parrot", "yaw": 180, "action": "flap"},
+      {"offset": [1, 2, 1], "kind": "figure", "id": "minecraft:frog", "yaw": 180, "action": "hop", "times": {"show_from": 60, "show_until": 100}},
       {"offset": [0, 1, 1], "kind": "sound", "id": "minecraft:block.trial_spawner.spawn_mob", "yaw": 0, "times": {"show_from": 60, "show_until": 65}},
       {"offset": [0, 0, 2], "kind": "sound", "id": "minecraft:block.piston.extend", "yaw": 20, "times": {"show_from": 45, "show_until": 70}},
       {"offset": [0, 0, 0], "kind": "sound", "id": "minecraft:block.brewing_stand.brew", "yaw": 0, "times": {"show_from": 5, "show_until": 10}},
       {"offset": [0, 1, 0], "kind": "sound", "id": "minecraft:entity.chicken.egg", "yaw": 0, "times": {"show_from": 0, "show_until": 5}}
     ],
-    "hide_file": false
+    "hide_file": false,
+    "poses": [
+      {"offset": [-1, 0, 1], "pose": {"rotation": [0, 45, 0], "scale": 0.8}},
+      {"offset": [1, 0, 1], "pose": {"rotation": [0, 45, 0], "scale": 0.8}},
+      {"offset": [0, -1, 1], "pose": {"offset": [0, 0.125, 0], "scale": 0.75}}
+    ]
   }
 }

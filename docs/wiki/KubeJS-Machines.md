@@ -175,6 +175,20 @@ id) and `event.machine`: `getItem(slot)`, `setItem(slot, stack)` (inputs first, 
 `getFluidAmount(tank)`, `getEnergy()`, `setEnergy(fe)`, `getProgress()`, `getCurrentRecipe()`, `isWorking()`,
 `getSpec()`. Operation events add `event.recipeId` and `event.recipe`.
 
+For the machine's animation, `event.machine` also has:
+
+- `setDisplay(name, stack)` / `getDisplay(name)`: the item a display shows (`input`, `output`, `result`, or any name
+  an animation uses). Set `result` in `operationStarting` to show what this operation will give (the recipe's output
+  otherwise); it's read back in `operationFinished` and emptied after it.
+- `setSpawnerMob(anchor, entityId)`: the mob a spawner part shows turning inside it, at one of the pattern's named
+  `anchors` (`''`: none).
+- `setPartData(anchor, nbt)` / `getPartData(anchor)`: any block data a part shows (a sign's text, a banner's
+  patterns...). Only drawn: the real block gets its own data back when the machine breaks.
+- `getAnchorPos(anchor)`: where a named anchor is in the world.
+
+The [Egg Hatchery example](../examples/egg-hatchery/README.md) picks a random spawn egg as the work starts, shows
+its mob in the spawner and the egg floating, then gives that same egg.
+
 ## 6. A guide book page (optional, needs Patchouli)
 
 AlchyX registers every structure file as a Patchouli multiblock under its pattern id, so a book page only needs

@@ -191,6 +191,11 @@ public class ChamberShellBlockEntity extends BlockEntity {
         if (level != null) level.sendBlockUpdated(worldPosition, getBlockState(), getBlockState(), Block.UPDATE_CLIENTS);
     }
 
+    /** Client: the look an animation gives it now (a "swap", a state step), or null. */
+    public @Nullable BlockState getClientLook() {
+        return clientLook;
+    }
+
     /**
      * Client: show {@code look} instead of the disguise until called with null (animation "swap"). Redraws the
      * block right away.

@@ -199,6 +199,8 @@ It's only drawn: no AI, no collision, no sounds of its own (add `sound` effects 
 | `scale` | `1` | size |
 | `ghost` | `false` | see-through, like an invisible mob seen by a spectator (entities) |
 | `display` / `unless_display` | | only while the machine's display of that name holds an item / is empty |
+| `action` | `still` | what it does: `walk` (its legs move), `swing` (an arm strikes: witches, villagers, illagers, zombies...), `flap` (a chicken's or a parrot's wings), `hop`, `spin` |
+| `to` | | a target it walks to through its `between` window (from its start to its end), facing the way it goes |
 
 Mods register coded figures with `Figures.register(id, (context, poseStack, collector, camera) -> ...)` during client
 setup (see `CodedFigure`). A coded figure doesn't have to be a body: anything a block draws with its own code (a book,

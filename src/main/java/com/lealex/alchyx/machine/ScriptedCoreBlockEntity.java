@@ -53,6 +53,7 @@ public class ScriptedCoreBlockEntity extends MultiblockCoreBlockEntity implement
     private @Nullable Identifier currentRecipe;
     private int progress = 0;
     private boolean lookupDirty = true;   // inputs changed: look for a recipe again
+    private boolean resultByScript;        // a script set the "result" display as the operation started: keep it
     private int lookupGeneration = -1;
 
     private final ContainerData guiData = new ContainerData() {
@@ -215,11 +216,13 @@ public class ScriptedCoreBlockEntity extends MultiblockCoreBlockEntity implement
         for (Map.Entry<Identifier, MachineRecipe> entry : MachineRecipes.forMachine(spec.recipeType())) {
             MachineRecipe recipe = entry.getValue();
             if (!inputsPresent(recipe) || !outputsFit(recipe)) continue;
+            resultByScript = false;
             if (!MachineHooks.get().starting(this, entry.getKey())) return;
             currentRecipe = entry.getKey();
             progress = 0;
             startAnimationOperation(recipe.time());
-            setAnimationDisplay("result", recipe.outputs().isEmpty() ? ItemStack.EMPTY : recipe.outputs().getFirst().toStack());
+            if (!resultByScript) setAnimationDisplay("result", recipe.outputs().isEmpty() ? ItemStack.EMPTY : recipe.outputs().getFirst().toStack());
+            resultByScript = false;
             setChanged();
             return;
         }
@@ -237,9 +240,9 @@ public class ScriptedCoreBlockEntity extends MultiblockCoreBlockEntity implement
         currentRecipe = null;
         progress = 0;
         lookupDirty = true;
-        setAnimationDisplay("result", ItemStack.EMPTY);
         finishAnimationOperation();
-        if (id != null) MachineHooks.get().finished(this, id);
+        if (id != null) MachineHooks.get().finished(this, id); // (it may still read the "result" display)
+        setAnimationDisplay("result", ItemStack.EMPTY);
     }
 
     private void resetOperation() {
@@ -370,6 +373,69 @@ public class ScriptedCoreBlockEntity extends MultiblockCoreBlockEntity implement
 
     public ItemStack getItem(int slot) {
         return slot >= 0 && slot < spec.itemSlots() ? items.copyToList().get(slot) : ItemStack.EMPTY;
+    }
+
+    /**
+     * Scripts: the item a display shows ("input", "output", "result", or any name an animation uses). Set "result" in
+     * operationStarting to show what this operation will give (the recipe's output otherwise); it's emptied when the
+     * operation ends, after operationFinished.
+     */
+    public void setDisplay(String name, ItemStack stack) {
+        if (name.equals("result")) resultByScript = true;
+        setAnimationDisplay(name, stack.copy());
+    }
+
+    /** Scripts: the item a display shows now (empty if none). */
+    public ItemStack getDisplay(String name) {
+        return getAnimationDisplay(name).copy();
+    }
+
+    /** Scripts: the world position of one of the pattern's named anchors ("spawner"), turned with the machine, or null. */
+    public @Nullable BlockPos getAnchorPos(String anchor) {
+        com.lealex.alchyx.multiblock.MultiblockPattern pattern = filePattern();
+        return pattern == null ? null : pattern.anchor(worldPosition, pattern.rotationFor(getBlockState()), anchor);
+    }
+
+    /**
+     * Scripts: the block data a part of the machine shows (a spawner's mob, a sign's text...), at a named anchor of
+     * the pattern; null if there's no part there or it keeps none.
+     */
+    public net.minecraft.nbt.@Nullable CompoundTag getPartData(String anchor) {
+        BlockPos pos = getAnchorPos(anchor);
+        return pos != null && structureContains(pos) && level != null
+                && level.getBlockEntity(pos) instanceof com.lealex.alchyx.block.entity.ChamberShellBlockEntity shell ? shell.getData() : null;
+    }
+
+    /**
+     * Scripts: sets the block data a part of the machine shows, at a named anchor (only drawn: the part keeps it,
+     * and the real block gets its own data back when the machine breaks). Returns whether there was a part there.
+     */
+    public boolean setPartData(String anchor, net.minecraft.nbt.CompoundTag data) {
+        BlockPos pos = getAnchorPos(anchor);
+        if (pos == null || level == null || !structureContains(pos)
+                || !(level.getBlockEntity(pos) instanceof com.lealex.alchyx.block.entity.ChamberShellBlockEntity shell)) return false;
+        shell.setData(data);
+        return true;
+    }
+
+    /**
+     * Scripts: the mob a spawner part shows turning inside it ("minecraft:chicken"), at a named anchor; "" shows none.
+     * Returns whether there was a part there.
+     */
+    public boolean setSpawnerMob(String anchor, String entity) {
+        net.minecraft.nbt.CompoundTag data = getPartData(anchor);
+        if (data == null) data = new net.minecraft.nbt.CompoundTag();
+        if (entity.isEmpty()) {
+            data.remove("SpawnData");
+        } else {
+            net.minecraft.nbt.CompoundTag mob = new net.minecraft.nbt.CompoundTag();
+            mob.putString("id", entity);
+            net.minecraft.nbt.CompoundTag spawnData = new net.minecraft.nbt.CompoundTag();
+            spawnData.put("entity", mob);
+            data.put("SpawnData", spawnData);
+            data.remove("SpawnPotentials");
+        }
+        return setPartData(anchor, data);
     }
 
     /** Scripts: replace a slot's contents (input or output). */

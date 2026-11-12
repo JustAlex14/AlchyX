@@ -440,7 +440,8 @@ public abstract class MultiblockCoreBlockEntity extends BlockEntity {
                 : "it already stands: sneak and use the Recorder on the core to forget its shape first";
         String problem = rules.check(level, worldPosition, a, b);
         if (problem != null) return problem;
-        if (!motions.isEmpty() || !marks.isEmpty() || hideFileAnimation) { // (made for the old layout)
+        if (!motions.isEmpty() || !marks.isEmpty() || hideFileAnimation || !poses.isEmpty()) { // (made for the old layout)
+            poses.clear();
             motions.clear();
             setups.clear();
             marks.clear();
@@ -462,6 +463,7 @@ public abstract class MultiblockCoreBlockEntity extends BlockEntity {
         motions.clear();
         setups.clear();
         marks.clear();
+        poses.clear();
         motionsVersion++;
         setRecordedShape(null);
         return true;
@@ -534,6 +536,7 @@ public abstract class MultiblockCoreBlockEntity extends BlockEntity {
     private final Map<BlockPos, com.lealex.alchyx.animation.Motion> motions = new java.util.LinkedHashMap<>();
     private final Map<BlockPos, com.lealex.alchyx.animation.MotionSetup> setups = new java.util.LinkedHashMap<>(); // a motion's times and state (studio)
     private final List<com.lealex.alchyx.animation.StudioMark> marks = new ArrayList<>(); // anchors: particles, figures
+    private final Map<BlockPos, com.lealex.alchyx.animation.BlockPose> poses = new java.util.LinkedHashMap<>(); // blocks reshaped (studio's Shape tab)
     private int motionsVersion = 0; // changes with every change of the motions or marks (the client's animation follows it)
 
     private record MotionAt(BlockPos offset, com.lealex.alchyx.animation.Motion motion, com.lealex.alchyx.animation.MotionSetup setup) {
@@ -552,6 +555,18 @@ public abstract class MultiblockCoreBlockEntity extends BlockEntity {
     /** When each motion plays and what a change sets (Machine Studio), by offset; a motion without one plays all the time. */
     public Map<BlockPos, com.lealex.alchyx.animation.MotionSetup> setups() {
         return java.util.Collections.unmodifiableMap(setups);
+    }
+
+    /** The blocks a player reshaped with the Machine Studio (moved, turned, sized, hidden), by offset; read only. */
+    public Map<BlockPos, com.lealex.alchyx.animation.BlockPose> poses() {
+        return java.util.Collections.unmodifiableMap(poses);
+    }
+
+    private record PoseAt(BlockPos offset, com.lealex.alchyx.animation.BlockPose pose) {
+        static final com.mojang.serialization.Codec<PoseAt> CODEC = com.mojang.serialization.codecs.RecordCodecBuilder.create(instance -> instance.group(
+                BlockPos.CODEC.fieldOf("offset").forGetter(PoseAt::offset),
+                com.lealex.alchyx.animation.BlockPose.CODEC.fieldOf("pose").forGetter(PoseAt::pose)
+        ).apply(instance, PoseAt::new));
     }
 
     /** The anchors a player put with the Machine Studio (particles, figures), read only. */
@@ -600,7 +615,8 @@ public abstract class MultiblockCoreBlockEntity extends BlockEntity {
      * isn't a formed free-build machine. Server side.
      */
     public int setStudio(Map<BlockPos, com.lealex.alchyx.animation.Motion> wanted, Map<BlockPos, com.lealex.alchyx.animation.MotionSetup> wantedSetups,
-                         List<com.lealex.alchyx.animation.StudioMark> wantedMarks, boolean hideFile) {
+                         List<com.lealex.alchyx.animation.StudioMark> wantedMarks, boolean hideFile,
+                         Map<BlockPos, com.lealex.alchyx.animation.BlockPose> wantedPoses) {
         com.lealex.alchyx.multiblock.FreeBuild rules = studioRules();
         if (level == null || level.isClientSide() || rules == null || !studioOpens()) return -1;
         Map<BlockPos, com.lealex.alchyx.animation.Motion> kept = new java.util.LinkedHashMap<>();
@@ -639,8 +655,20 @@ public abstract class MultiblockCoreBlockEntity extends BlockEntity {
                     mark.to().map(BlockPos::immutable), mark.times(), mark.items(), mark.shows()).cleaned());
         }
         boolean hide = hideFile && recordedShape == null; // (a free build's file is its own: nothing to turn off)
-        if (!kept.equals(motions) || !keptSetups.equals(setups) || !keptMarks.equals(marks) || hide != hideFileAnimation) {
+        Map<BlockPos, com.lealex.alchyx.animation.BlockPose> keptPoses = new java.util.LinkedHashMap<>();
+        for (Map.Entry<BlockPos, com.lealex.alchyx.animation.BlockPose> entry : wantedPoses.entrySet()) {
+            BlockPos pos = worldPosition.offset(entry.getKey());
+            if (entry.getValue() == null || !ShellParts.isPart(level.getBlockState(pos)) || !structureContains(pos)) continue;
+            com.lealex.alchyx.animation.BlockPose pose = entry.getValue().tidy();
+            if (pose.isNone()) continue;
+            keptPoses.put(entry.getKey().immutable(), pose);
+            com.lealex.alchyx.block.ChamberShellBlock.unseal(level, pos);
+        }
+        if (!kept.equals(motions) || !keptSetups.equals(setups) || !keptMarks.equals(marks) || hide != hideFileAnimation
+                || !keptPoses.equals(poses)) {
             hideFileAnimation = hide;
+            poses.clear();
+            poses.putAll(keptPoses);
             motions.clear();
             motions.putAll(kept);
             setups.clear();
@@ -651,7 +679,7 @@ public abstract class MultiblockCoreBlockEntity extends BlockEntity {
             setChanged();
             syncToClients();
         }
-        return kept.size() + keptMarks.size();
+        return kept.size() + keptMarks.size() + keptPoses.size();
     }
 
     private void setRecordedShape(@Nullable MultiblockPattern shape) {
@@ -1153,6 +1181,11 @@ public abstract class MultiblockCoreBlockEntity extends BlockEntity {
         if (!marks.isEmpty()) output.store("alchyx_marks", com.lealex.alchyx.animation.StudioMark.CODEC.listOf(), List.copyOf(marks));
         if (hideFileAnimation) output.putBoolean("alchyx_hide_file", true);
         if (unlocked) output.putBoolean("alchyx_unlocked", true);
+        if (!poses.isEmpty()) {
+            List<PoseAt> list = new ArrayList<>();
+            poses.forEach((offset, pose) -> list.add(new PoseAt(offset, pose)));
+            output.store("alchyx_poses", PoseAt.CODEC.listOf(), list);
+        }
     }
 
     private static final com.mojang.serialization.Codec<Map<String, Integer>> LEVELS_CODEC =
@@ -1196,8 +1229,13 @@ public abstract class MultiblockCoreBlockEntity extends BlockEntity {
                 com.lealex.alchyx.animation.StudioMark.CODEC.listOf()).orElse(List.of());
         unlocked = input.getBooleanOr("alchyx_unlocked", false);
         boolean readHide = input.getBooleanOr("alchyx_hide_file", false);
-        if (!read.equals(motions) || !readSetups.equals(setups) || !readMarks.equals(marks) || readHide != hideFileAnimation) {
+        Map<BlockPos, com.lealex.alchyx.animation.BlockPose> readPoses = new java.util.LinkedHashMap<>();
+        input.read("alchyx_poses", PoseAt.CODEC.listOf()).ifPresent(list -> list.forEach(at -> readPoses.put(at.offset(), at.pose())));
+        if (!read.equals(motions) || !readSetups.equals(setups) || !readMarks.equals(marks) || readHide != hideFileAnimation
+                || !readPoses.equals(poses)) {
             hideFileAnimation = readHide;
+            poses.clear();
+            poses.putAll(readPoses);
             motions.clear();
             motions.putAll(read);
             setups.clear();

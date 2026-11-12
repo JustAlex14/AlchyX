@@ -124,7 +124,44 @@ public final class AnimationEngine {
             }
             Runtime runtime = runtime(level, core);
             if (runtime != null) tick(minecraft, level, core, runtime, now);
+            veilPosed(level, core);
         }
+    }
+
+    /** Cells each core veils because the studio reshaped them (world positions), to show again when that's undone. */
+    private static final Map<MultiblockCoreBlockEntity, java.util.Set<BlockPos>> POSED = new java.util.WeakHashMap<>();
+
+    /**
+     * Veils the parts the studio reshaped (moved, turned, sized or hidden: drawn by {@link #onExtract} instead) and
+     * shows again those no longer reshaped.
+     */
+    private static void veilPosed(ClientLevel level, MultiblockCoreBlockEntity core) {
+        java.util.Set<BlockPos> before = POSED.get(core);
+        if (core.poses().isEmpty() && before == null) return;
+        java.util.Set<BlockPos> now = new java.util.HashSet<>();
+        if (core.isFormed()) for (BlockPos offset : core.poses().keySet()) now.add(core.getBlockPos().offset(offset));
+        if (before != null) {
+            for (BlockPos pos : before) {
+                if (now.contains(pos) || moving(core, pos)) continue;
+                if (level.getBlockEntity(pos) instanceof ChamberShellBlockEntity shell) shell.setClientHidden(false);
+            }
+        }
+        for (BlockPos pos : now) if (level.getBlockEntity(pos) instanceof ChamberShellBlockEntity shell) shell.setClientHidden(true);
+        if (now.isEmpty()) POSED.remove(core);
+        else POSED.put(core, now);
+    }
+
+    /** Whether a hiding block move plays at {@code pos} now. */
+    private static boolean moving(MultiblockCoreBlockEntity core, BlockPos pos) {
+        Runtime rt = RUNTIMES.get(core);
+        if (rt == null) return false;
+        for (Move move : rt.moves) if (move.pos().equals(pos) && move.effect().hide()) return true;
+        return false;
+    }
+
+    /** The studio's reshaping of the part at {@code pos}, if any. */
+    private static com.lealex.alchyx.animation.@Nullable BlockPose poseAt(MultiblockCoreBlockEntity core, BlockPos pos) {
+        return core.poses().isEmpty() ? null : core.poses().get(pos.subtract(core.getBlockPos()));
     }
 
     /** The core's runtime, rebuilt when new definitions arrive; null if its machine has no animation file. */
@@ -211,7 +248,7 @@ public final class AnimationEngine {
             if (now - move.start() <= Keyframe.duration(move.effect().keyframes())) return false;
             if (level.getBlockEntity(move.pos()) instanceof ChamberShellBlockEntity shell) {
                 shell.setClientLook(null);
-                if (move.effect().hide()) shell.setClientHidden(false);
+                if (move.effect().hide() && poseAt(core, move.pos()) == null) shell.setClientHidden(false);
             }
             return true;
         });
@@ -452,8 +489,21 @@ public final class AnimationEngine {
         for (MultiblockCoreBlockEntity core : LoadedCores.snapshot()) {
             if (core.isRemoved() || core.getLevel() != level || !core.isFormed()) continue;
             Runtime rt = RUNTIMES.get(core);
-            if (rt == null) continue;
+            if (rt == null && core.poses().isEmpty()) continue;
             if (Vec3.atCenterOf(core.getBlockPos()).distanceToSqr(camera) > PLAY_RANGE * PLAY_RANGE) continue;
+            java.util.Set<BlockPos> drawnMoving = new java.util.HashSet<>();
+            if (rt != null) for (Move move : rt.moves) if (move.effect().hide()) drawnMoving.add(move.pos());
+            // The parts the studio reshaped, standing still (those that move are reshaped as they move, below)
+            for (Map.Entry<BlockPos, com.lealex.alchyx.animation.BlockPose> posed : core.poses().entrySet()) {
+                BlockPos pos = core.getBlockPos().offset(posed.getKey());
+                com.lealex.alchyx.animation.BlockPose pose = posed.getValue();
+                if (pose.hidden() || drawnMoving.contains(pos)) continue;
+                BlockState look = level.getBlockEntity(pos) instanceof ChamberShellBlockEntity shell && shell.getClientLook() != null
+                        ? shell.getClientLook() : ChamberShellBlock.lookAt(level, pos);
+                if (look == null || look.isAir()) continue;
+                entries.add(movingBlock(level, pos, Vec3.atLowerCornerOf(pos).add(pose.offset()), pose.rotation(), pose.scale(), look));
+            }
+            if (rt == null) continue;
             Rotation rotation = MultiblockPattern.rotationFor(rt.def.front(), core.getBlockState());
 
             for (Move move : rt.moves) {
@@ -466,15 +516,16 @@ public final class AnimationEngine {
                 Vec3 pos = Vec3.atLowerCornerOf(move.pos())
                         .add(d.getStepX() * pose.move(), d.getStepY() * pose.move(), d.getStepZ() * pose.move())
                         .add(rotate(pose.offset(), rotation));
-                BlockPos lightPos = BlockPos.containing(pos.add(0.5, 0.5, 0.5));
-                MovingBlockRenderState state = new MovingBlockRenderState();
-                state.randomSeedPos = move.pos();
-                state.blockPos = lightPos;
-                state.blockState = drawn;
-                state.biome = level.getBiome(lightPos);
-                state.cardinalLighting = level.cardinalLighting();
-                state.lightEngine = level.getLightEngine();
-                entries.add(new BlockEntry(pos, pose.rotation(), pose.scale(), state));
+                Vec3 turn = pose.rotation();
+                float size = pose.scale();
+                com.lealex.alchyx.animation.BlockPose shaped = move.effect().hide() ? poseAt(core, move.pos()) : null;
+                if (shaped != null) { // reshaped in the studio: moves as reshaped
+                    if (shaped.hidden()) continue;
+                    pos = pos.add(shaped.offset());
+                    turn = turn.add(shaped.rotation());
+                    size *= shaped.scale();
+                }
+                if (size > 0.001F) entries.add(movingBlock(level, move.pos(), pos, turn, size, drawn));
             }
 
             boolean working = core.isAnimationWorking();
@@ -487,6 +538,16 @@ public final class AnimationEngine {
                     if (!figure.timing().within(working, core.getAnimationProgress(time))) continue; // "between"
                     Vec3 feet = at.getFirst().add(0, -0.5, 0); // bottom of the block
                     float yaw = figureYaw(level, core, rt, rotation, figure, feet);
+                    if (figure.to().isPresent()) { // walks to its "to" spot through its window of the work
+                        List<Vec3> to = positions(level, core, rt, rotation, figure.to().get());
+                        if (!to.isEmpty()) {
+                            Vec3 end = to.getFirst().add(0, -0.5, 0);
+                            float along = figureAlong(figure.timing(), core.getAnimationProgress(time));
+                            Vec3 way = end.subtract(feet);
+                            feet = feet.add(way.scale(along));
+                            if (figure.face().isEmpty() && way.lengthSqr() > 1e-4) yaw = (float) Math.toDegrees(Math.atan2(-way.x, way.z));
+                        }
+                    }
                     FigureDrawer.Prepared prepared = FigureDrawer.prepare(core, i, level, figure, feet, yaw, working,
                             core::getAnimationDisplay, time, partial, camera);
                     if (prepared != null) entries.add(new FigureEntry(feet, prepared));
@@ -531,6 +592,25 @@ public final class AnimationEngine {
             }
         }
         event.getRenderState().setRenderData(RENDER_KEY, entries.isEmpty() ? null : entries);
+    }
+
+    private static BlockEntry movingBlock(ClientLevel level, BlockPos seed, Vec3 pos, Vec3 rotation, float scale, BlockState drawn) {
+        BlockPos lightPos = BlockPos.containing(pos.add(0.5, 0.5, 0.5));
+        MovingBlockRenderState state = new MovingBlockRenderState();
+        state.randomSeedPos = seed;
+        state.blockPos = lightPos;
+        state.blockState = drawn;
+        state.biome = level.getBiome(lightPos);
+        state.cardinalLighting = level.cardinalLighting();
+        state.lightEngine = level.getLightEngine();
+        return new BlockEntry(pos, rotation, scale, state);
+    }
+
+    /** How far along its way a walking figure is at this point (0 to 1) of the work: through its "between" window. */
+    public static float figureAlong(Timing timing, float progress) {
+        float span = timing.until() - timing.from();
+        if (span < 1e-4F) return progress >= timing.until() ? 1 : 0;
+        return Math.max(0, Math.min(1, (progress - timing.from()) / span));
     }
 
     /** A figure's heading: toward its "face" target, else its "yaw" in pattern coordinates turned with the machine. */

@@ -25,7 +25,8 @@ import java.util.Optional;
  * <ul>
  *   <li>{@link Kind#PARTICLES}: particles of that type rise there while the machine works (or rests, as the machine
  *       says);</li>
- *   <li>{@link Kind#FIGURE}: an entity of that type stands there, turned by {@code yaw} degrees (only drawn: no AI,
+ *   <li>{@link Kind#FIGURE}: an entity of that type stands there, turned by {@code yaw} degrees, doing its
+ *       {@link #action()} (walking, swinging an arm...) and walking to {@code to} if it has one (only drawn: no AI,
  *       no collision).</li>
  *   <li>{@link Kind#ITEM}: items float there. {@code items} lists them (item ids, or a display's name: "input",
  *       "output", "result"), each with its own {@link ItemShow}: when in the work it shows and how it moves (spins,
@@ -225,8 +226,22 @@ public record StudioMark(BlockPos offset, Kind kind, String what, int yaw, Optio
         return shown;
     }
 
+    /**
+     * A figure's action (walks, swings...): a figure keeps it as its one entry in {@code items}. A figure that has a
+     * {@code to} spot walks there through its show time.
+     */
+    public Effect.FigureAction action() {
+        return kind == Kind.FIGURE && !items.isEmpty() ? Effect.FigureAction.byName(items.getFirst()) : Effect.FigureAction.STILL;
+    }
+
+    public StudioMark withAction(Effect.FigureAction action) {
+        return new StudioMark(offset, kind, what, yaw, to, times,
+                action == Effect.FigureAction.STILL ? List.of() : List.of(action.getSerializedName()), List.of());
+    }
+
     /** The same mark with only usable items (at most {@link #MAX_ITEMS}), each with a tidy show. */
     public StudioMark cleaned() {
+        if (kind == Kind.FIGURE) return new StudioMark(offset, kind, what, yaw, to, times.tidy(), List.of(), List.of()).withAction(action());
         if (kind != Kind.ITEM) return new StudioMark(offset, kind, what, yaw, Optional.empty(), times.tidy(), List.of(), List.of());
         List<String> kept = new ArrayList<>();
         List<ItemShow> keptShows = new ArrayList<>();
@@ -262,9 +277,14 @@ public record StudioMark(BlockPos offset, Kind kind, String what, int yaw, Optio
             Codec.INT.optionalFieldOf("yaw", 0).forGetter(StudioMark::yaw),
             BlockPos.CODEC.optionalFieldOf("to").forGetter(StudioMark::to),
             Times.CODEC.optionalFieldOf("times", Times.ALWAYS).forGetter(StudioMark::times),
-            Codec.STRING.listOf().optionalFieldOf("items", List.of()).forGetter(StudioMark::items),
-            ItemShow.CODEC.listOf().optionalFieldOf("shows", List.of()).forGetter(StudioMark::shows)
-    ).apply(instance, StudioMark::new));
+            Codec.STRING.listOf().optionalFieldOf("items", List.of()).forGetter(mark -> mark.kind == Kind.FIGURE ? List.of() : mark.items),
+            ItemShow.CODEC.listOf().optionalFieldOf("shows", List.of()).forGetter(StudioMark::shows),
+            Effect.FigureAction.CODEC.optionalFieldOf("action").forGetter(mark -> mark.kind == Kind.FIGURE && mark.action() != Effect.FigureAction.STILL
+                    ? Optional.of(mark.action()) : Optional.empty())
+    ).apply(instance, (offset, kind, what, yaw, to, times, items, shows, action) -> {
+        StudioMark mark = new StudioMark(offset, kind, what, yaw, to, times, items, shows);
+        return kind == Kind.FIGURE ? mark.withAction(action.orElse(Effect.FigureAction.STILL)) : mark;
+    }));
 
     public static final StreamCodec<ByteBuf, StudioMark> STREAM_CODEC = StreamCodec.composite(
             BlockPos.STREAM_CODEC, StudioMark::offset,
@@ -314,7 +334,7 @@ public record StudioMark(BlockPos offset, Kind kind, String what, int yaw, Optio
                     0.0F, 0.0F, 1.0F, false, Optional.empty(), Optional.empty()));
             case FIGURE -> id == null ? List.of() : List.of(new Effect.Figure(new Timing(Trigger.ALWAYS, 1, 1.0F, 0, Map.of(), Timing.Where.EVERYWHERE).between(from, until),
                     Optional.of(id), Optional.empty(), Optional.empty(), at, Optional.empty(), Optional.of((float) yaw), false,
-                    0.0F, 0.0F, 1.0F, false, Optional.empty(), Optional.empty()));
+                    0.0F, 0.0F, 1.0F, false, Optional.empty(), Optional.empty(), action(), toTarget));
             case ITEM -> {
                 if (items.isEmpty()) {
                     yield List.of(new Effect.FloatingItem(base.between(from, until), what, at,

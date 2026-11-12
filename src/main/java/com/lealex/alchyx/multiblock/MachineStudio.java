@@ -52,7 +52,8 @@ public final class MachineStudio {
 
     /** The studio's save (client to server): every motion of the machine (and when it plays), by offset from the core. */
     public record Save(BlockPos core, Map<BlockPos, Motion> motions, Map<BlockPos, MotionSetup> setups, List<StudioMark> marks,
-                       Map<BlockPos, net.minecraft.nbt.CompoundTag> data, boolean hideFile) implements CustomPacketPayload {
+                       Map<BlockPos, net.minecraft.nbt.CompoundTag> data, boolean hideFile,
+                       Map<BlockPos, com.lealex.alchyx.animation.BlockPose> poses) implements CustomPacketPayload {
         public static final Type<Save> TYPE = new Type<>(AlchyX.id("studio_save"));
         public static final StreamCodec<RegistryFriendlyByteBuf, Save> STREAM_CODEC = StreamCodec.of(
                 (buf, save) -> {
@@ -71,6 +72,11 @@ public final class MachineStudio {
                         net.minecraft.network.codec.ByteBufCodecs.COMPOUND_TAG.encode(buf, tag);
                     });
                     buf.writeBoolean(save.hideFile());
+                    buf.writeVarInt(save.poses().size());
+                    save.poses().forEach((offset, pose) -> {
+                        BlockPos.STREAM_CODEC.encode(buf, offset);
+                        com.lealex.alchyx.animation.BlockPose.STREAM_CODEC.encode(buf, pose);
+                    });
                 },
                 buf -> {
                     BlockPos core = BlockPos.STREAM_CODEC.decode(buf);
@@ -98,7 +104,15 @@ public final class MachineStudio {
                         BlockPos offset = BlockPos.STREAM_CODEC.decode(buf);
                         data.put(offset, net.minecraft.network.codec.ByteBufCodecs.COMPOUND_TAG.decode(buf));
                     }
-                    return new Save(core, motions, setups, marks, data, buf.readBoolean());
+                    boolean hideFile = buf.readBoolean();
+                    int poseCount = buf.readVarInt();
+                    if (poseCount < 0 || poseCount > MAX_MOTIONS) throw new IllegalArgumentException("Too many poses: " + poseCount);
+                    Map<BlockPos, com.lealex.alchyx.animation.BlockPose> poses = new LinkedHashMap<>();
+                    for (int i = 0; i < poseCount; i++) {
+                        BlockPos offset = BlockPos.STREAM_CODEC.decode(buf);
+                        poses.put(offset, com.lealex.alchyx.animation.BlockPose.STREAM_CODEC.decode(buf));
+                    }
+                    return new Save(core, motions, setups, marks, data, hideFile, poses);
                 });
 
         @Override
@@ -123,9 +137,9 @@ public final class MachineStudio {
             player.sendSystemMessage(Component.literal("You can't change this machine here"), true);
             return;
         }
-        int kept = core.setStudio(save.motions(), save.setups(), save.marks(), save.hideFile());
+        int kept = core.setStudio(save.motions(), save.setups(), save.marks(), save.hideFile(), save.poses());
         if (kept < 0) return;
-        int dropped = save.motions().size() + save.marks().size() - kept;
+        int dropped = save.motions().size() + save.marks().size() + save.poses().size() - kept;
         // Block data (a spawner's mob...): only on this machine's parts that have a block entity, kept by the shell
         // and only drawn: it never goes back into a real block, so it can't make anything that wasn't there
         for (Map.Entry<BlockPos, net.minecraft.nbt.CompoundTag> entry : save.data().entrySet()) {

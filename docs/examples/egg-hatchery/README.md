@@ -37,7 +37,7 @@ Sneak and right-click the formed core with an empty hand (or use the Structure R
 the Machine Studio opens. **Import**, pick
 `mypack/machine_animation/egg_hatchery_studio.json`, then **Save**. Over one operation (5 s):
 
-- **Blocks**: the spawner spins from 1 s to 4 s; the piston strikes from 2.25 s to 3.5 s; the cauldron goes through
+- **Blocks**: the spawner spins and bobs at once (two motions on one block: Spin, then Shift + click Bob) from 1 s to 4 s; the piston strikes from 2.25 s to 3.5 s; the cauldron goes through
   five state keyframes: water level 1 (0.25 s), 2 (1 s), 3 (1.75 s), then powder snow (3 s), then empty (4.5 s).
 - **Shape**: the two glass blocks are turned 45 degrees and a little smaller, and the cauldron is smaller and raised a
   little (for the look only: the blocks stay where they are).

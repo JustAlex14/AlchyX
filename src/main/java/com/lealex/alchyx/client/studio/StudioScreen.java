@@ -66,7 +66,7 @@ import java.util.Set;
  * Save sends it to the machine (nothing changes before).
  */
 public class StudioScreen extends Screen {
-    private static final int PANEL_WIDE = 132, MARGIN = 8, TOP = 22, BAR = 30, ROW = 20, LIST_TOP = TOP + 64;
+    private static final int PANEL_WIDE = 150, MARGIN = 8, TOP = 22, BAR = 30, ROW = 20, LIST_TOP = TOP + 64;
     private static final int BACK = 0xE0101018, VIEW_BACK = 0xFF1A1A26, EDGE = 0xFF3C3550, ACCENT = 0xFFD9A7FF, TEXT = 0xFFE8E4F0,
             FAINT = 0xFF9A93AA, WARN = 0xFFFFB866, GOOD = 0xFF8BE39B;
     private static final float START_YAW = (float) Math.toRadians(-35), START_PITCH = (float) Math.toRadians(-28);
@@ -80,7 +80,7 @@ public class StudioScreen extends Screen {
     private static final BlockState PATH_MARK = Blocks.LIGHT_BLUE_STAINED_GLASS.defaultBlockState();
     private static final int OPERATION = 100; // the preview's pretend work: one operation this many ticks long
 
-    private enum Tab { BLOCKS, SHAPE, ANCHORS }
+    private enum Tab { BUILD, BLOCKS, SHAPE, ANCHORS }
 
     private final BlockPos corePos;
     private final @Nullable Object shape;                    // the machine's shape when the studio opened (it closes if that changes)
@@ -91,7 +91,12 @@ public class StudioScreen extends Screen {
     private record FileMove(BlockPos cell, com.lealex.alchyx.client.animation.AnimationEngine.PreviewMove move) {}
     private final List<FileMove> fileMoves = new ArrayList<>();
     private final Set<BlockPos> fileMoved = new java.util.HashSet<>(); // cells a file's move swaps or hides: drawn apart
-    private final BlockPos min, size;                        // the build's box: lowest offset from the core, and its size
+    private BlockPos min, size;                              // the build's box: lowest offset from the core, and its size (grows as blocks are put in)
+    private final @Nullable FreeBuild building;              // the rules for building in the studio (Build tab), or null: it can't be rebuilt
+    private final Map<BlockPos, BlockState> builtFrom = new HashMap<>(); // the blocks as the machine stands, by offset from the core
+    private BlockState brush = Blocks.STONE.defaultBlockState(); // what the Build tab puts in
+    private boolean rebuilding;                              // a build was saved: the studio opens again on the new shape
+    private @Nullable String buildProblem;                   // why the last block couldn't go in
     private final Map<BlockPos, BlockState> looks = new HashMap<>();     // what shows at each cell (box coordinates)
     private final Set<BlockPos> movable = new LinkedHashSet<>();        // cells that can be given a motion
     private final Map<BlockPos, Motion> edits = new LinkedHashMap<>();  // the motions as changed here (box coordinates)
@@ -122,7 +127,7 @@ public class StudioScreen extends Screen {
     private boolean pickingTo;             // the next spot picked is where the chosen item travels to
     private boolean scrubbing;             // the mouse holds the work bar
 
-    private @Nullable Button saveButton, layerDown, layerUp, blocksTab, shapeTab, anchorsTab;
+    private @Nullable Button saveButton, layerDown, layerUp, buildTab, blocksTab, shapeTab, anchorsTab, brushButton, undoBuildButton;
     private final List<Button> shapeButtons = new ArrayList<>(); // Shape tab
     private @Nullable Button hideButton;
     private double nudge = 0.125;          // how far the Shape tab's arrows move a block (blocks)
@@ -148,6 +153,8 @@ public class StudioScreen extends Screen {
         BlockPos max = box[1];
         this.size = new BlockPos(max.getX() - min.getX() + 1, max.getY() - min.getY() + 1, max.getZ() - min.getZ() + 1);
         this.top = size.getY() - 1;
+        this.building = core.isFormed() ? core.freeBuild() : null;
+        if (building != null) this.tab = Tab.BUILD; // a machine players may build: the studio opens on its build
         ClientLevel level = Minecraft.getInstance().level;
         for (MultiblockPattern.LookCell cell : core.studioCells()) {
             BlockPos at = cell.offset().subtract(min);
@@ -177,6 +184,16 @@ public class StudioScreen extends Screen {
         marks.putAll(savedMarks);
         core.poses().forEach((offset, pose) -> savedPoses.put(offset.subtract(min), pose));
         poses.putAll(savedPoses);
+        looks.forEach((cell, look) -> builtFrom.put(cell.offset(min), look));
+    }
+
+    /** The studio for that core, on the Build tab (opened again after a build was saved). */
+    private StudioScreen(MultiblockCoreBlockEntity core, Tab tab, float yaw, float pitch, float zoom) {
+        this(core);
+        this.tab = tab;
+        this.yaw = yaw;
+        this.pitch = pitch;
+        this.zoom = zoom;
     }
 
     /** Opens the studio for the core at this position, if it still shows a formed free-build machine. */
@@ -241,14 +258,26 @@ public class StudioScreen extends Screen {
         addRenderableWidget(Button.builder(Component.literal("Close"), b -> onClose()).bounds(width - MARGIN - 50, y, 50, 20).build());
 
         // The tabs
-        int px = panelX() + 4, wide = PANEL_WIDE - 8, half = (wide - 4) / 2, tabWide = (wide - 4) / 3;
-        blocksTab = addRenderableWidget(Button.builder(Component.literal("Blocks"), b -> setTab(Tab.BLOCKS)).bounds(px, TOP + 4, tabWide, 18).build());
+        int px = panelX() + 4, wide = PANEL_WIDE - 8, half = (wide - 4) / 2, tabWide = (wide - 6) / 4;
+        buildTab = addRenderableWidget(Button.builder(Component.literal("Build"), b -> setTab(Tab.BUILD)).bounds(px, TOP + 4, tabWide, 18).build());
+        buildTab.setTooltip(Tooltip.create(Component.literal(building != null
+                ? "Put blocks in and take them out, like in the world: they all become the machine's parts"
+                : "This machine has a fixed shape: complete it once, then it can be built your own way")));
+        blocksTab = addRenderableWidget(Button.builder(Component.literal("Blocks"), b -> setTab(Tab.BLOCKS))
+                .bounds(px + tabWide + 2, TOP + 4, tabWide, 18).build());
         blocksTab.setTooltip(Tooltip.create(Component.literal("How blocks move as the machine works")));
         shapeTab = addRenderableWidget(Button.builder(Component.literal("Shape"), b -> setTab(Tab.SHAPE))
-                .bounds(px + tabWide + 2, TOP + 4, tabWide, 18).build());
+                .bounds(px + 2 * (tabWide + 2), TOP + 4, tabWide, 18).build());
         shapeTab.setTooltip(Tooltip.create(Component.literal("Hide, move, turn and size blocks (for the look: the blocks stay where they are), or shrink the whole machine")));
         anchorsTab = addRenderableWidget(Button.builder(Component.literal("Anchors"), b -> setTab(Tab.ANCHORS))
-                .bounds(px + 2 * (tabWide + 2), TOP + 4, wide - 2 * (tabWide + 2), 18).build());
+                .bounds(px + 3 * (tabWide + 2), TOP + 4, wide - 3 * (tabWide + 2), 18).build());
+
+        // Build: the block put in, and starting over
+        brushButton = addRenderableWidget(Button.builder(Component.literal("Block..."), b -> pickBrush()).bounds(px, LIST_TOP, wide, 18).build());
+        brushButton.setTooltip(Tooltip.create(Component.literal("The block a click puts in: any block, modded ones too. Middle click a block of the machine: that one")));
+        undoBuildButton = addRenderableWidget(Button.builder(Component.literal("Undo the build"), b -> undoBuild())
+                .bounds(px, LIST_TOP + ROW, wide, 18).build());
+        undoBuildButton.setTooltip(Tooltip.create(Component.literal("Every block back as the machine stands (what isn't saved)")));
         anchorsTab.setTooltip(Tooltip.create(Component.literal("Spots where particles rise, a figure stands or an item floats")));
 
         // Blocks: a button per motion this machine allows, and one to keep blocks still
@@ -262,7 +291,8 @@ public class StudioScreen extends Screen {
         for (Motion motion : choices) {
             Button button = addRenderableWidget(Button.builder(Component.literal(label(motion)), b -> give(motion))
                     .bounds(px + column * (buttonWide + 2), py, buttonWide, 18).build());
-            button.setTooltip(Tooltip.create(Component.literal(explain(motion))));
+            button.setTooltip(Tooltip.create(Component.literal(explain(motion) + (motion == null || motion == Motion.CHANGE ? ""
+                    : ". Shift+click: play it too, with the block's own motion (a drill: Strike, then Shift+click Spin)"))));
             motionButtons.add(button);
             motionChoices.add(motion);
             if (++column == columns) {
@@ -451,6 +481,171 @@ public class StudioScreen extends Screen {
         refreshButtons();
     }
 
+    // ---- Build: blocks put in and taken out, like in the world (Save makes them the machine's parts) ----
+
+    /** Whether the blocks shown differ from the machine as it stands. */
+    private boolean buildChanged() {
+        if (looks.size() != builtFrom.size()) return true;
+        for (BlockPos cell : looks.keySet()) if (!builtFrom.containsKey(cell.offset(min))) return true;
+        return false;
+    }
+
+    private void pickBrush() {
+        minecraft.setScreen(new ItemPickerScreen(this, id -> {
+            Identifier parsed = Identifier.tryParse(id);
+            net.minecraft.world.item.Item item = parsed == null ? null : BuiltInRegistries.ITEM.getValue(parsed);
+            if (item instanceof net.minecraft.world.item.BlockItem blockItem) brush = blockItem.getBlock().defaultBlockState();
+        }, true));
+    }
+
+    /** The block a click puts on a side facing {@code face}: turned that way, if it can turn. */
+    private BlockState brushFor(Direction face) {
+        BlockState state = brush;
+        if (state.hasProperty(net.minecraft.world.level.block.state.properties.BlockStateProperties.FACING)) {
+            state = state.setValue(net.minecraft.world.level.block.state.properties.BlockStateProperties.FACING, face);
+        } else if (state.hasProperty(net.minecraft.world.level.block.state.properties.BlockStateProperties.HORIZONTAL_FACING)
+                && face.getAxis().isHorizontal()) {
+            state = state.setValue(net.minecraft.world.level.block.state.properties.BlockStateProperties.HORIZONTAL_FACING, face);
+        } else if (state.hasProperty(net.minecraft.world.level.block.state.properties.BlockStateProperties.AXIS)) {
+            state = state.setValue(net.minecraft.world.level.block.state.properties.BlockStateProperties.AXIS, face.getAxis());
+        }
+        return state;
+    }
+
+    /** Puts the brush's block on the side {@code face} of the block at {@code cell}, if it fits there. */
+    private void putIn(BlockPos cell, Direction face) {
+        if (building == null) return;
+        BlockPos offset = cell.relative(face).offset(min);
+        if (looks.containsKey(offset.subtract(min))) return;
+        ClientLevel level = Minecraft.getInstance().level;
+        BlockState there = level == null ? Blocks.AIR.defaultBlockState() : level.getBlockState(corePos.offset(offset));
+        if (!builtFrom.containsKey(offset) && !there.isAir() && !there.canBeReplaced()) {
+            buildProblem = "Something stands there in the world (" + there.getBlock().getName().getString() + "): take it away first";
+            return;
+        }
+        BlockPos high = min.offset(size).offset(-1, -1, -1);
+        BlockPos low = BlockPos.min(min, offset), top = BlockPos.max(high, offset);
+        int wideX = top.getX() - low.getX() + 1, wideZ = top.getZ() - low.getZ() + 1, tall = top.getY() - low.getY() + 1;
+        if (Math.max(wideX, wideZ) > building.maxWidth() || tall > building.maxHeight()) {
+            buildProblem = "That's past what this machine allows: " + building.maxWidth() + " wide, " + building.maxHeight() + " high";
+            return;
+        }
+        if (!low.equals(min) || !top.equals(high)) regrow(low, top);
+        BlockPos at = offset.subtract(min);
+        looks.put(at, brushFor(face));
+        movable.add(at);
+        buildProblem = null;
+        stillDirty = true;
+        refreshButtons();
+    }
+
+    /** Takes the block at {@code cell} out (not the core). */
+    private void takeOut(BlockPos cell) {
+        if (building == null || !looks.containsKey(cell)) return;
+        if (cell.offset(min).equals(BlockPos.ZERO)) {
+            buildProblem = "The core stays: the machine is built around it";
+            return;
+        }
+        looks.remove(cell);
+        movable.remove(cell);
+        edits.remove(cell);
+        setups.remove(cell);
+        poses.remove(cell);
+        dataEdits.remove(cell);
+        chosen.remove(cell);
+        buildProblem = null;
+        stillDirty = true;
+        refreshButtons();
+    }
+
+    /** Every block back as the machine stands. */
+    private void undoBuild() {
+        for (BlockPos cell : new ArrayList<>(looks.keySet())) if (!builtFrom.containsKey(cell.offset(min))) takeOut(cell);
+        ClientLevel level = Minecraft.getInstance().level;
+        builtFrom.forEach((offset, look) -> {
+            BlockPos cell = offset.subtract(min);
+            if (looks.containsKey(cell)) return;
+            looks.put(cell, look);
+            if (level != null && ShellParts.isPart(level.getBlockState(corePos.offset(offset)))) movable.add(cell);
+            BlockPos core = BlockPos.ZERO.subtract(min);
+            if (cell.equals(core)) movable.remove(cell);
+        });
+        for (Map.Entry<BlockPos, Motion> entry : saved.entrySet()) if (!edits.containsKey(entry.getKey())) edits.put(entry.getKey(), entry.getValue());
+        for (Map.Entry<BlockPos, MotionSetup> entry : savedSetups.entrySet()) setups.putIfAbsent(entry.getKey(), entry.getValue());
+        for (Map.Entry<BlockPos, BlockPose> entry : savedPoses.entrySet()) poses.putIfAbsent(entry.getKey(), entry.getValue());
+        buildProblem = null;
+        stillDirty = true;
+        refreshButtons();
+    }
+
+    /** The box grows to {@code low} .. {@code high} (offsets from the core): everything kept by box cell moves along. */
+    private void regrow(BlockPos low, BlockPos high) {
+        BlockPos by = min.subtract(low); // old cell + by = new cell
+        boolean allShown = top >= size.getY() - 1;
+        shift(looks, by);
+        shift(edits, by);
+        shift(saved, by);
+        shift(setups, by);
+        shift(savedSetups, by);
+        shift(dataEdits, by);
+        shift(poses, by);
+        shift(savedPoses, by);
+        shiftMarks(marks, by);
+        shiftMarks(savedMarks, by);
+        shift(movable, by);
+        shift(chosen, by);
+        shift(fileMoved, by);
+        List<FileMove> moved = new ArrayList<>();
+        for (FileMove file : fileMoves) moved.add(new FileMove(file.cell().offset(by), file.move()));
+        fileMoves.clear();
+        fileMoves.addAll(moved);
+        if (spot != null) spot = spot.offset(by);
+        hovered = null;
+        min = low;
+        size = new BlockPos(high.getX() - low.getX() + 1, high.getY() - low.getY() + 1, high.getZ() - low.getZ() + 1);
+        top = allShown ? size.getY() - 1 : Mth.clamp(top + by.getY(), 0, size.getY() - 1);
+        still = null;
+        stillDirty = true;
+    }
+
+    private static <V> void shift(Map<BlockPos, V> map, BlockPos by) {
+        Map<BlockPos, V> moved = new LinkedHashMap<>();
+        map.forEach((cell, value) -> moved.put(cell.offset(by), value));
+        map.clear();
+        map.putAll(moved);
+    }
+
+    private static void shift(Set<BlockPos> set, BlockPos by) {
+        List<BlockPos> moved = new ArrayList<>();
+        for (BlockPos cell : set) moved.add(cell.offset(by));
+        set.clear();
+        set.addAll(moved);
+    }
+
+    private static void shiftMarks(Map<BlockPos, StudioMark> map, BlockPos by) {
+        Map<BlockPos, StudioMark> moved = new LinkedHashMap<>();
+        map.forEach((cell, mark) -> moved.put(cell.offset(by), mark.shifted(by)));
+        map.clear();
+        map.putAll(moved);
+    }
+
+    /** A message cut in lines that fit the panel. */
+    private List<String> wrap(String text) {
+        List<String> lines = new ArrayList<>();
+        StringBuilder line = new StringBuilder();
+        for (String word : text.split(" ")) {
+            String tried = line.isEmpty() ? word : line + " " + word;
+            if (font.width(tried) > PANEL_WIDE - 10 && !line.isEmpty()) {
+                lines.add(line.toString());
+                line = new StringBuilder(word);
+            } else {
+                line = new StringBuilder(tried);
+            }
+        }
+        if (!line.isEmpty()) lines.add(line.toString());
+        return lines;
+    }
+
     private void setTab(Tab to) {
         tab = to;
         refreshButtons();
@@ -458,7 +653,7 @@ public class StudioScreen extends Screen {
 
     private boolean changed() {
         return !edits.equals(saved) || !setups.equals(savedSetups) || !marks.equals(savedMarks) || !dataEdits.isEmpty()
-                || hideFile != savedHideFile || !poses.equals(savedPoses);
+                || hideFile != savedHideFile || !poses.equals(savedPoses) || buildChanged();
     }
 
     private void refreshButtons() {
@@ -468,6 +663,15 @@ public class StudioScreen extends Screen {
         if (blocksTab != null) blocksTab.active = tab != Tab.BLOCKS;
         if (anchorsTab != null) anchorsTab.active = tab != Tab.ANCHORS;
         if (shapeTab != null) shapeTab.active = tab != Tab.SHAPE;
+        if (buildTab != null) buildTab.active = tab != Tab.BUILD && building != null;
+        if (brushButton != null) {
+            brushButton.visible = tab == Tab.BUILD;
+            brushButton.setMessage(Component.literal(clip("Block: " + brush.getBlock().getName().getString())));
+        }
+        if (undoBuildButton != null) {
+            undoBuildButton.visible = tab == Tab.BUILD;
+            undoBuildButton.active = buildChanged();
+        }
         boolean blocks = tab == Tab.BLOCKS;
         boolean posable = !chosen.isEmpty() && movable.containsAll(chosen);
         for (Button button : shapeButtons) {
@@ -499,7 +703,9 @@ public class StudioScreen extends Screen {
             for (BlockPos cell : chosen) if (motion != null && !motion.fits(looks.get(cell))) fits = false;
             button.active = fits;
             boolean current = !chosen.isEmpty() && same && motion == shared;
-            button.setMessage(Component.literal(current ? "> " + label(motion) + " <" : label(motion)));
+            boolean also = motion != null && !chosen.isEmpty()
+                    && chosen.stream().allMatch(cell -> setups.getOrDefault(cell, MotionSetup.ALWAYS).also().contains(motion) && edits.containsKey(cell));
+            button.setMessage(Component.literal(current ? "> " + label(motion) + " <" : also ? "+ " + label(motion) : label(motion)));
         }
 
         boolean moving = !chosen.isEmpty();
@@ -561,6 +767,25 @@ public class StudioScreen extends Screen {
     // ---- Changes ----
 
     private void give(@Nullable Motion motion) {
+        if (motion != null && motion != Motion.CHANGE && Minecraft.getInstance().hasShiftDown()) { // played too, with the block's own
+            for (BlockPos cell : chosen) {
+                Motion main = edits.get(cell);
+                BlockState look = looks.get(cell);
+                if (look == null || !motion.fits(look)) continue;
+                if (main == null) {
+                    edits.put(cell, motion);
+                    continue;
+                }
+                if (main == motion) continue;
+                MotionSetup setup = setups.getOrDefault(cell, MotionSetup.ALWAYS);
+                List<Motion> also = new ArrayList<>(setup.also());
+                if (!also.remove(motion)) also.add(motion);
+                putSetup(cell, setup.withAlso(also).tidy(main, look));
+            }
+            stillDirty = true;
+            refreshButtons();
+            return;
+        }
         if (motion == Motion.CHANGE) {
             pickState();
             return;
@@ -867,7 +1092,16 @@ public class StudioScreen extends Screen {
         dataEdits.forEach((cell, tag) -> data.put(cell.offset(min), tag));
         Map<BlockPos, BlockPose> shaped = new LinkedHashMap<>();
         poses.forEach((cell, pose) -> shaped.put(cell.offset(min), pose));
-        connection.send(new ServerboundCustomPayloadPacket(new MachineStudio.Save(corePos, motions, timings, sent, data, hideFile, shaped)));
+        // The build: blocks put in and taken out (by offset from the core)
+        Map<BlockPos, BlockState> added = new LinkedHashMap<>();
+        List<BlockPos> removed = new ArrayList<>();
+        looks.forEach((cell, look) -> {
+            if (!builtFrom.containsKey(cell.offset(min))) added.put(cell.offset(min), look);
+        });
+        for (BlockPos offset : builtFrom.keySet()) if (!looks.containsKey(offset.subtract(min))) removed.add(offset);
+        rebuilding = !added.isEmpty() || !removed.isEmpty();
+        connection.send(new ServerboundCustomPayloadPacket(new MachineStudio.Save(corePos, motions, timings, sent, data, hideFile, shaped,
+                added, removed)));
         dataEdits.clear();
         saved.clear();
         saved.putAll(edits);
@@ -1032,6 +1266,11 @@ public class StudioScreen extends Screen {
         if (minecraft.level == null || !(minecraft.level.getBlockEntity(corePos) instanceof MultiblockCoreBlockEntity core)
                 || !MachineStudio.opens(core) || (core.recordedShape() != null ? core.recordedShape() : core.pattern()) != shape
                 || minecraft.player == null || minecraft.player.distanceToSqr(corePos.getCenter()) > 16 * 16) {
+            if (rebuilding && minecraft.level != null && minecraft.level.getBlockEntity(corePos) instanceof MultiblockCoreBlockEntity again
+                    && MachineStudio.opens(again)) {
+                minecraft.setScreen(new StudioScreen(again, tab, yaw, pitch, zoom)); // the new build, to go on with it
+                return;
+            }
             onClose();
             return;
         }
@@ -1143,7 +1382,7 @@ public class StudioScreen extends Screen {
 
     private List<Track> tracks() {
         List<Track> tracks = new ArrayList<>();
-        if (tab == Tab.SHAPE) return tracks;
+        if (tab == Tab.SHAPE || tab == Tab.BUILD) return tracks;
         if (tab == Tab.BLOCKS) {
             if (chosen.isEmpty() || !edits.keySet().containsAll(chosen)) return tracks;
             BlockPos first = chosen.iterator().next();
@@ -1282,6 +1521,15 @@ public class StudioScreen extends Screen {
             scrub(event.x());
             return true;
         }
+        if (tab == Tab.BUILD && event.button() != 0 && inView(event.x(), event.y())) { // right: take out, middle: that block
+            StudioView.Hit hit = under(event.x(), event.y());
+            if (hit != null && event.button() == 1) takeOut(hit.cell());
+            if (hit != null && event.button() == 2 && looks.get(hit.cell()) != null) {
+                brush = looks.get(hit.cell());
+                refreshButtons();
+            }
+            return true;
+        }
         if (event.button() == 0 && inView(event.x(), event.y())) {
             setFocused(null); // (the item box lets go of the keys)
             dragging = true;
@@ -1345,7 +1593,9 @@ public class StudioScreen extends Screen {
             dragging = false;
             if (dragged < 3) {
                 StudioView.Hit hit = under(event.x(), event.y());
-                if (tab != Tab.ANCHORS) choose(hit == null ? null : hit.cell(), event.hasShiftDown(), event.hasControlDown());
+                if (tab == Tab.BUILD) {
+                    if (hit != null) putIn(hit.cell(), hit.face());
+                } else if (tab != Tab.ANCHORS) choose(hit == null ? null : hit.cell(), event.hasShiftDown(), event.hasControlDown());
                 else pickSpot(hit);
             }
             return true;
@@ -1557,6 +1807,12 @@ public class StudioScreen extends Screen {
                 if (edits.containsKey(cell)) {
                     graphics.text(font, setup.always() ? "All along the work" : seconds(setup.from()) + " to " + seconds(setup.until()), tx, y, TEXT, false);
                     y += 11;
+                    if (!setup.also().isEmpty()) {
+                        List<String> names = new ArrayList<>();
+                        for (Motion other : setup.also()) names.add(label(other));
+                        graphics.text(font, clip("With: " + String.join(", ", names)), tx, y, ACCENT, false);
+                        y += 11;
+                    }
                 }
                 for (int i = 0; i < setup.steps().size(); i++) {
                     if (y > viewY1() - 30) break;
@@ -1573,6 +1829,27 @@ public class StudioScreen extends Screen {
             y += 14;
             help = List.of("Drag: turn, wheel: zoom", "Click: choose a block", "Shift+click: add one", "Ctrl+click: all alike",
                     "Greyed: it can't do that", "Space: play / pause");
+        } else if (tab == Tab.BUILD) {
+            int addedCount = 0, takenCount = 0;
+            for (BlockPos cell : looks.keySet()) if (!builtFrom.containsKey(cell.offset(min))) addedCount++;
+            for (BlockPos offset : builtFrom.keySet()) if (!looks.containsKey(offset.subtract(min))) takenCount++;
+            graphics.text(font, "Build it here", tx, ty, ACCENT, false);
+            graphics.text(font, clip(size.getX() + " x " + size.getY() + " x " + size.getZ() + (building == null ? ""
+                    : " (at most " + building.maxWidth() + " x " + building.maxHeight() + " x " + building.maxWidth() + ")")), tx, ty + 12, FAINT, false);
+            y = LIST_TOP + 2 * ROW + 4;
+            if (addedCount + takenCount > 0) {
+                graphics.text(font, clip("+" + addedCount + " blocks, -" + takenCount + ": Save builds it"), tx, y, WARN, false);
+                y += 12;
+            }
+            if (buildProblem != null) {
+                for (String line : wrap(buildProblem)) {
+                    graphics.text(font, line, tx, y, WARN, false);
+                    y += 10;
+                }
+                y += 2;
+            }
+            help = List.of("Click a side: put a block", "Right click: take it out", "Middle click: pick that block",
+                    "Every block becomes a part", "of the machine (Save)", "Drag: turn, wheel: zoom", "Hide layers to reach inside");
         } else if (tab == Tab.SHAPE) {
             if (chosen.isEmpty()) {
                 graphics.text(font, "Click a block", tx, ty, ACCENT, false);
@@ -1663,7 +1940,7 @@ public class StudioScreen extends Screen {
 
     private boolean drawnApart(BlockPos cell) {
         Motion motion = edits.get(cell);
-        return poses.containsKey(cell) || (motion != null && motion.moves()) || (!hideFile && fileMoved.contains(cell) && !edits.containsKey(cell));
+        return poses.containsKey(cell) || anyMoves(cell) || (!hideFile && fileMoved.contains(cell) && !edits.containsKey(cell));
     }
 
     /**
@@ -1724,10 +2001,10 @@ public class StudioScreen extends Screen {
 
     /** What a cell looks like now in the preview: its own look, or the step a change of look is at. */
     private BlockState shownLook(BlockPos cell, BlockState look) {
-        Motion motion = edits.get(cell);
-        if (motion == null || motion.moves()) return look;
+        Motion motion = lookMotion(cell);
+        if (motion == null) return look;
         MotionSetup setup = setups.getOrDefault(cell, MotionSetup.ALWAYS);
-        List<Map<String, String>> steps = motion.steps(look, setup);
+        List<Map<String, String>> steps = motion == edits.get(cell) ? motion.steps(look, setup) : motion.steps(look);
         float progress = progress(0);
         if (steps.isEmpty() || !setup.plays(progress)) return look;
         if (motion == Motion.CHANGE) { // each step from its keyframe
@@ -1738,6 +2015,23 @@ public class StudioScreen extends Screen {
         float local = span < 1e-4F ? 1 : (progress - setup.from() / 100.0F) / span;
         int step = Mth.clamp((int) (local * steps.size()), 0, steps.size() - 1); // through its time, like on the machine
         return BlockLook.apply(look, steps.get(step));
+    }
+
+    /** Every motion a block plays: its own, then the others played with it. */
+    private List<Motion> allMotions(BlockPos cell) {
+        Motion motion = edits.get(cell);
+        return motion == null ? List.of() : setups.getOrDefault(cell, MotionSetup.ALWAYS).all(motion);
+    }
+
+    private boolean anyMoves(BlockPos cell) {
+        for (Motion motion : allMotions(cell)) if (motion.moves()) return true;
+        return false;
+    }
+
+    /** The motion that changes the block's own look (light, fill, change...), if it plays one. */
+    private @Nullable Motion lookMotion(BlockPos cell) {
+        for (Motion motion : allMotions(cell)) if (!motion.moves()) return motion;
+        return null;
     }
 
     /** The blocks that stand still now, as one mesh (made again when the layers, the motions, play or a step change). */
@@ -1779,31 +2073,33 @@ public class StudioScreen extends Screen {
             for (Map.Entry<BlockPos, Motion> entry : edits.entrySet()) {
                 BlockPos cell = entry.getKey();
                 BlockState look = looks.get(cell);
-                Motion motion = entry.getValue();
-                if (look == null || cell.getY() > top || !motion.moves()) continue;
+                if (look == null || cell.getY() > top || !anyMoves(cell)) continue;
+                BlockState shown = shownLook(cell, look);
                 if (!setups.getOrDefault(cell, MotionSetup.ALWAYS).plays(progress(partialTicks))) { // outside its time: at rest
-                    addPiece(pieces, cell, new StudioRenderState.Piece(pieceMesh(look), Vec3.atLowerCornerOf(cell), Vec3.ZERO, 1));
+                    addPiece(pieces, cell, new StudioRenderState.Piece(pieceMesh(shown), Vec3.atLowerCornerOf(cell), Vec3.ZERO, 1));
                     continue;
                 }
-                if (motion == Motion.STRIKE && Motion.isPiston(look)) {
+                List<Motion> moving = new ArrayList<>();
+                for (Motion motion : allMotions(cell)) if (motion.moves()) moving.add(motion);
+                if (moving.contains(Motion.STRIKE) && Motion.isPiston(look)) {
                     piston(pieces, cell, look, time);
                     continue;
                 }
-                List<Keyframe> frames = motion.keyframes();
+                // One motion, or several played together (a drill strikes and spins)
+                List<Keyframe> frames = moving.size() == 1 ? moving.getFirst().keyframes() : Motion.combine(moving);
                 float loop = Math.max(1, Keyframe.duration(frames));
                 Keyframe pose = Keyframe.at(frames, time % loop);
-                Direction d = direction(motion, cell, look);
+                Direction d = direction(Motion.directionOf(moving).equals("facing") ? Motion.STRIKE : Motion.SPIN, cell, look);
                 Vec3 at = Vec3.atLowerCornerOf(cell).add(d.getStepX() * pose.move(), d.getStepY() * pose.move(), d.getStepZ() * pose.move())
                         .add(pose.offset());
-                addPiece(pieces, cell, new StudioRenderState.Piece(pieceMesh(look), at, pose.rotation(), pose.scale()));
+                addPiece(pieces, cell, new StudioRenderState.Piece(pieceMesh(shown), at, pose.rotation(), pose.scale()));
             }
         }
         fileMovePieces(pieces, time);
         for (Map.Entry<BlockPos, BlockPose> posed : poses.entrySet()) { // reshaped blocks standing still
             BlockPos cell = posed.getKey();
             BlockState look = looks.get(cell);
-            Motion motion = edits.get(cell);
-            if (look == null || cell.getY() > top || (motion != null && motion.moves())
+            if (look == null || cell.getY() > top || anyMoves(cell)
                     || (!hideFile && fileMoved.contains(cell) && !edits.containsKey(cell))) continue;
             if (posed.getValue().hidden()) {
                 if (tab == Tab.SHAPE) pieces.add(mark(cell, HOVER_MARK, 0.5F)); // (so it can be chosen, and shown again)
@@ -1811,7 +2107,12 @@ public class StudioScreen extends Screen {
             }
             addPiece(pieces, cell, new StudioRenderState.Piece(pieceMesh(shownLook(cell, look)), Vec3.atLowerCornerOf(cell), Vec3.ZERO, 1));
         }
-        if (tab != Tab.ANCHORS) {
+        if (tab == Tab.BUILD && hovered != null) { // the block pointed at, and where a click puts one
+            pieces.add(mark(hovered.cell(), HOVER_MARK, 1.05F));
+            BlockPos front = hovered.cell().relative(hovered.face());
+            if (!looks.containsKey(front)) pieces.add(new StudioRenderState.Piece(pieceMesh(brushFor(hovered.face())), Vec3.atLowerCornerOf(front), Vec3.ZERO, 0.6F));
+        }
+        if (tab != Tab.ANCHORS && tab != Tab.BUILD) {
             for (BlockPos cell : chosen) {
                 if (cell.getY() <= top) pieces.add(mark(cell, CHOSEN_MARK, 1.08F));
             }

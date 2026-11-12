@@ -53,7 +53,14 @@ public final class MachineStudio {
     /** The studio's save (client to server): every motion of the machine (and when it plays), by offset from the core. */
     public record Save(BlockPos core, Map<BlockPos, Motion> motions, Map<BlockPos, MotionSetup> setups, List<StudioMark> marks,
                        Map<BlockPos, net.minecraft.nbt.CompoundTag> data, boolean hideFile,
-                       Map<BlockPos, com.lealex.alchyx.animation.BlockPose> poses) implements CustomPacketPayload {
+                       Map<BlockPos, com.lealex.alchyx.animation.BlockPose> poses,
+                       Map<BlockPos, net.minecraft.world.level.block.state.BlockState> added, List<BlockPos> removed) implements CustomPacketPayload {
+        /** Without building (no block put in or taken out). */
+        public Save(BlockPos core, Map<BlockPos, Motion> motions, Map<BlockPos, MotionSetup> setups, List<StudioMark> marks,
+                    Map<BlockPos, net.minecraft.nbt.CompoundTag> data, boolean hideFile, Map<BlockPos, com.lealex.alchyx.animation.BlockPose> poses) {
+            this(core, motions, setups, marks, data, hideFile, poses, Map.of(), List.of());
+        }
+
         public static final Type<Save> TYPE = new Type<>(AlchyX.id("studio_save"));
         public static final StreamCodec<RegistryFriendlyByteBuf, Save> STREAM_CODEC = StreamCodec.of(
                 (buf, save) -> {
@@ -77,6 +84,13 @@ public final class MachineStudio {
                         BlockPos.STREAM_CODEC.encode(buf, offset);
                         com.lealex.alchyx.animation.BlockPose.STREAM_CODEC.encode(buf, pose);
                     });
+                    buf.writeVarInt(save.added().size());
+                    save.added().forEach((offset, state) -> {
+                        BlockPos.STREAM_CODEC.encode(buf, offset);
+                        buf.writeVarInt(net.minecraft.world.level.block.Block.getId(state));
+                    });
+                    buf.writeVarInt(save.removed().size());
+                    for (BlockPos offset : save.removed()) BlockPos.STREAM_CODEC.encode(buf, offset);
                 },
                 buf -> {
                     BlockPos core = BlockPos.STREAM_CODEC.decode(buf);
@@ -112,7 +126,18 @@ public final class MachineStudio {
                         BlockPos offset = BlockPos.STREAM_CODEC.decode(buf);
                         poses.put(offset, com.lealex.alchyx.animation.BlockPose.STREAM_CODEC.decode(buf));
                     }
-                    return new Save(core, motions, setups, marks, data, hideFile, poses);
+                    int addedCount = buf.readVarInt();
+                    if (addedCount < 0 || addedCount > MAX_MOTIONS) throw new IllegalArgumentException("Too many blocks: " + addedCount);
+                    Map<BlockPos, net.minecraft.world.level.block.state.BlockState> added = new LinkedHashMap<>();
+                    for (int i = 0; i < addedCount; i++) {
+                        BlockPos offset = BlockPos.STREAM_CODEC.decode(buf);
+                        added.put(offset, net.minecraft.world.level.block.Block.stateById(buf.readVarInt()));
+                    }
+                    int removedCount = buf.readVarInt();
+                    if (removedCount < 0 || removedCount > MAX_MOTIONS) throw new IllegalArgumentException("Too many blocks: " + removedCount);
+                    List<BlockPos> removed = new ArrayList<>();
+                    for (int i = 0; i < removedCount; i++) removed.add(BlockPos.STREAM_CODEC.decode(buf));
+                    return new Save(core, motions, setups, marks, data, hideFile, poses, added, removed);
                 });
 
         @Override
@@ -137,6 +162,19 @@ public final class MachineStudio {
             player.sendSystemMessage(Component.literal("You can't change this machine here"), true);
             return;
         }
+        // The build first (blocks put in become parts right away, so they can be given motions in the same save)
+        String built = null;
+        if (!save.added().isEmpty() || !save.removed().isEmpty()) {
+            if (core.freeBuild() == null) {
+                player.sendSystemMessage(Component.literal("This machine has a fixed shape: complete it once, then build it your own way"));
+                return;
+            }
+            built = core.rebuild(save.added(), save.removed());
+            if (!built.startsWith("Built")) { // the rules said no: nothing changes
+                player.sendSystemMessage(Component.literal("Can't build that: " + built));
+                return;
+            }
+        }
         int kept = core.setStudio(save.motions(), save.setups(), save.marks(), save.hideFile(), save.poses());
         if (kept < 0) return;
         int dropped = save.motions().size() + save.marks().size() + save.poses().size() - kept;
@@ -155,6 +193,7 @@ public final class MachineStudio {
             }
             shell.setData(tag);
         }
+        if (built != null) player.sendSystemMessage(Component.literal(built));
         player.sendSystemMessage(Component.literal("Machine saved: " + core.motions().size() + " moving blocks, " + core.marks().size() + " anchors"
                 + (dropped > 0 ? " (" + dropped + " left out: this machine doesn't allow them)" : "")), true);
         level.playSound(null, pos, SoundEvents.BOOK_PAGE_TURN, SoundSource.PLAYERS, 1.0f, 1.2f);

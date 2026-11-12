@@ -104,17 +104,19 @@ public final class Motions {
         for (Map.Entry<BlockPos, Motion> entry : motions.entrySet()) {
             String anchor = "alchyx_motion_" + n++;
             BlockState look = level == null ? null : ChamberShellBlock.lookAt(level, corePos.offset(entry.getKey()));
-            Effect effect = look == null ? null : entry.getValue().effect(anchor, when, look,
+            List<Effect> made = look == null ? List.of() : Motion.effects(entry.getValue(), anchor, when, look,
                     setups.getOrDefault(entry.getKey(), MotionSetup.ALWAYS));
-            if (effect == null) continue;
+            if (made.isEmpty()) continue;
             com.lealex.alchyx.animation.BlockPose pose = poses.get(entry.getKey());
-            if (pose != null && effect instanceof Effect.BlockMove move && move.hide() && move.draw().isEmpty()) {
-                effect = new Effect.BlockMove(move.timing(), move.targets(), move.draw(), move.direction(), move.align(), move.swap(),
-                        pose.apply(move.keyframes(), com.lealex.alchyx.animation.BlockPose.turn(pose.offset(), back)), true);
-                posed.add(entry.getKey());
+            for (Effect effect : made) {
+                if (pose != null && effect instanceof Effect.BlockMove move && move.hide() && move.draw().isEmpty()) {
+                    effect = new Effect.BlockMove(move.timing(), move.targets(), move.draw(), move.direction(), move.align(), move.swap(),
+                            pose.apply(move.keyframes(), com.lealex.alchyx.animation.BlockPose.turn(pose.offset(), back)), true);
+                    posed.add(entry.getKey());
+                }
+                effects.add(effect);
             }
             anchors.put(anchor, entry.getKey().rotate(back));
-            effects.add(effect);
         }
         n = 0;
         for (Map.Entry<BlockPos, com.lealex.alchyx.animation.BlockPose> entry : poses.entrySet()) {

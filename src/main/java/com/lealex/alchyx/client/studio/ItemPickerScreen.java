@@ -55,12 +55,20 @@ public class ItemPickerScreen extends Screen {
 
     /** Picks one entry: a click on it hands it to {@code picked} and goes back. */
     public ItemPickerScreen(Screen parent, Consumer<String> picked) {
-        super(Component.literal("Pick an item"));
+        this(parent, picked, false);
+    }
+
+    /** Picks one item; {@code blocksOnly}: only blocks (their items), no displays (the studio's Build tab). */
+    public ItemPickerScreen(Screen parent, Consumer<String> picked, boolean blocksOnly) {
+        super(Component.literal(blocksOnly ? "Pick a block" : "Pick an item"));
         this.parent = parent;
         this.done = list -> {};
         this.chosen = new ArrayList<>();
         this.single = picked;
+        this.blocksOnly = blocksOnly;
     }
+
+    private boolean blocksOnly;
 
     // ---- Layout ----
 
@@ -111,13 +119,13 @@ public class ItemPickerScreen extends Screen {
         if (found != null) return found;
         String text = search.trim().toLowerCase(Locale.ROOT);
         List<String> entries = new ArrayList<>();
-        for (String display : StudioMark.DISPLAYS) {
+        for (String display : blocksOnly ? List.<String>of() : StudioMark.DISPLAYS) {
             if (text.isEmpty() || display.contains(text) || "display".contains(text)) entries.add(display);
         }
         String asId = text.replace(' ', '_');
         for (Identifier id : BuiltInRegistries.ITEM.keySet()) {
             Item item = BuiltInRegistries.ITEM.getValue(id);
-            if (item == Items.AIR) continue;
+            if (item == Items.AIR || (blocksOnly && !(item instanceof net.minecraft.world.item.BlockItem))) continue;
             if (text.isEmpty() || id.toString().contains(asId)
                     || new ItemStack(item).getHoverName().getString().toLowerCase(Locale.ROOT).contains(text)) {
                 entries.add(id.toString());

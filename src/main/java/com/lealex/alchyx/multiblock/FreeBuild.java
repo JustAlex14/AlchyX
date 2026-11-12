@@ -232,6 +232,26 @@ public record FreeBuild(int maxWidth, int maxHeight, int minBlocks, List<BlockMa
      */
     public MultiblockPattern record(Level level, BlockPos core, BlockPos a, BlockPos b, Block coreBlock) {
         BlockPos min = BlockPos.min(a, b), max = BlockPos.max(a, b);
+        Map<BlockPos, BlockState> cells = new LinkedHashMap<>();
+        Set<BlockPos> real = new java.util.HashSet<>();
+        for (BlockPos pos : BlockPos.betweenClosed(min, max)) {
+            if (pos.equals(core)) continue;
+            BlockState state = level.getBlockState(pos);
+            if (state.isAir()) continue;
+            BlockPos offset = pos.subtract(core);
+            cells.put(offset, state);
+            // Blocks holding things (chests, tanks, batteries...) and liquids stay real: a part would lose what
+            // they hold. Other blocks with data (a spawner, a banner, a sign...) become parts that keep it to show
+            if (holdsThings(level, pos, state) || state.getBlock() instanceof LiquidBlock) real.add(offset);
+        }
+        return recordCells(cells, real, coreBlock, min.subtract(core), max.subtract(core));
+    }
+
+    /**
+     * The same from blocks given by offset from the core (the Machine Studio's build): {@code real} are the offsets
+     * that stay real blocks (the rest become parts), {@code min} and {@code max} the box (offsets, with the core).
+     */
+    public MultiblockPattern recordCells(Map<BlockPos, BlockState> cells, Set<BlockPos> real, Block coreBlock, BlockPos min, BlockPos max) {
         Map<String, PatternKey> key = new LinkedHashMap<>();
         Map<String, ResultKey> resultKey = new LinkedHashMap<>();
         key.put(".", entry(Optional.empty(), Map.of(), false, true));
@@ -248,14 +268,14 @@ public record FreeBuild(int maxWidth, int maxHeight, int minBlocks, List<BlockMa
             for (int z = min.getZ(); z <= max.getZ(); z++) {
                 StringBuilder row = new StringBuilder(), resultRow = new StringBuilder();
                 for (int x = min.getX(); x <= max.getX(); x++) {
-                    BlockPos pos = new BlockPos(x, y, z);
-                    BlockState state = level.getBlockState(pos);
-                    if (pos.equals(core)) {
+                    BlockPos offset = new BlockPos(x, y, z);
+                    if (offset.equals(BlockPos.ZERO)) {
                         row.append('@');
                         resultRow.append('.');
                         continue;
                     }
-                    if (state.isAir()) {
+                    BlockState state = cells.get(offset);
+                    if (state == null || state.isAir()) {
                         row.append('.');
                         resultRow.append('.');
                         continue;
@@ -269,10 +289,7 @@ public record FreeBuild(int maxWidth, int maxHeight, int minBlocks, List<BlockMa
                         key.put(String.valueOf(c), entry(Optional.of(state.getBlock()), kept, false, false));
                     }
                     row.append(c);
-                    // Blocks holding things (chests, tanks, batteries...) and liquids stay real: a part would lose what
-                    // they hold. Other blocks with data (a spawner, a banner, a sign...) become parts that keep it to show
-                    boolean real = formed == Formed.KEEP || holdsThings(level, pos, state) || state.getBlock() instanceof LiquidBlock;
-                    resultRow.append(real ? '.' : 's');
+                    resultRow.append(formed == Formed.KEEP || real.contains(offset) ? '.' : 's');
                 }
                 rows.add(row.toString());
                 resultRows.add(resultRow.toString());
@@ -281,6 +298,42 @@ public record FreeBuild(int maxWidth, int maxHeight, int minBlocks, List<BlockMa
             result.add(resultRows);
         }
         return new MultiblockPattern(Optional.of(coreBlock), Optional.empty(), layers, key, Optional.of(result), resultKey, Map.of());
+    }
+
+    /**
+     * What's wrong with a build given by offset from the core (the Machine Studio's), or null if it follows the
+     * rules: its size, the blocks allowed and forbidden, the blocks it requires and how many it needs.
+     */
+    public @Nullable String checkCells(Map<BlockPos, BlockState> cells) {
+        BlockPos low = BlockPos.ZERO, high = BlockPos.ZERO;
+        int blocks = 0;
+        int[] found = new int[requires.size()];
+        for (Map.Entry<BlockPos, BlockState> entry : cells.entrySet()) {
+            BlockState state = entry.getValue();
+            if (state.isAir() || entry.getKey().equals(BlockPos.ZERO)) continue;
+            low = BlockPos.min(low, entry.getKey());
+            high = BlockPos.max(high, entry.getKey());
+            if (!allowed.isEmpty() && allowed.stream().noneMatch(match -> match.test(state))
+                    || forbidden.stream().anyMatch(match -> match.test(state))) {
+                return state.getBlock().getName().getString() + " can't be part of this machine";
+            }
+            blocks++;
+            for (int i = 0; i < requires.size(); i++) if (requires.get(i).block().test(state)) found[i]++;
+        }
+        int wideX = high.getX() - low.getX() + 1, wideZ = high.getZ() - low.getZ() + 1, height = high.getY() - low.getY() + 1;
+        if (Math.max(wideX, wideZ) > maxWidth || height > maxHeight) {
+            return "the build is " + wideX + " x " + height + " x " + wideZ + ", this machine allows at most " + maxWidth
+                    + " wide and " + maxHeight + " high";
+        }
+        StringBuilder missing = new StringBuilder();
+        for (int i = 0; i < requires.size(); i++) {
+            int short_ = requires.get(i).count() - found[i];
+            if (short_ <= 0) continue;
+            missing.append(missing.isEmpty() ? "still needs " : ", ").append(short_).append(" more ").append(requires.get(i).describe());
+        }
+        if (!missing.isEmpty()) return missing.toString();
+        if (blocks < minBlocks) return "it needs at least " + minBlocks + " blocks, it has " + blocks;
+        return null;
     }
 
     /** Whether the block holds items, fluid or energy (its own inventory, or what other mods can reach). */

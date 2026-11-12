@@ -210,6 +210,78 @@ public enum Motion implements StringRepresentable {
         return new Effect.BlockMove(timing, target, Optional.empty(), direction, false, Map.of(), keyframes, true);
     }
 
+    /**
+     * The effects of all the motions one block plays ({@code main} and its setup's {@code also}): the moves played
+     * together as one move (a drill strikes and spins), each change of look on its own, a piston's strike as a piston.
+     */
+    public static List<Effect> effects(Motion main, String anchor, Trigger when, BlockState look, MotionSetup setup) {
+        List<Effect> effects = new java.util.ArrayList<>();
+        List<Motion> moving = new java.util.ArrayList<>();
+        for (Motion motion : setup.all(main)) {
+            if (motion.moves() && !(motion == STRIKE && isPiston(look))) {
+                moving.add(motion);
+                continue;
+            }
+            Effect effect = motion.effect(anchor, when, look, motion == main ? setup : setup.withoutSteps());
+            if (effect != null) effects.add(effect);
+        }
+        if (moving.size() == 1) {
+            Effect effect = moving.getFirst().effect(anchor, when, look, setup);
+            if (effect != null) effects.add(effect);
+        } else if (moving.size() > 1) {
+            List<Keyframe> frames = combine(moving);
+            int loop = Math.max(1, (int) Keyframe.duration(frames));
+            Timing timing = new Timing(when, loop, 1.0F, 0, Map.of(), Timing.Where.EVERYWHERE).between(setup.from() / 100.0F, setup.until() / 100.0F);
+            Target target = new Target(Optional.of(anchor), Optional.empty(), Map.of(), Vec3.ZERO);
+            effects.add(new Effect.BlockMove(timing, target, Optional.empty(), directionOf(moving), false, Map.of(), frames, true));
+        }
+        return effects;
+    }
+
+    /** The way moves played together go: along the block's facing if one of them strikes, else up. */
+    public static String directionOf(List<Motion> moving) {
+        for (Motion motion : moving) if (motion.direction.equals("facing")) return "facing";
+        return "up";
+    }
+
+    /**
+     * Moves played together as one loop of keyframes: at each moment, their offsets and turns added up, their sizes
+     * multiplied, their pushes (a strike) added. The loop lasts until they all meet again (at most 12 seconds).
+     */
+    public static List<Keyframe> combine(List<Motion> moving) {
+        int loop = 1;
+        for (Motion motion : moving) {
+            int length = Math.max(1, Math.round(Keyframe.duration(motion.keyframes)));
+            int together = loop / gcd(loop, length) * length;
+            loop = together > 240 ? Math.max(loop, length) : together;
+        }
+        int step = Math.max(1, (loop + 62) / 63);
+        List<Keyframe> frames = new java.util.ArrayList<>();
+        for (int t = 0; t <= loop; t += step) frames.add(sample(moving, t));
+        if (frames.getLast().t() < loop) frames.add(sample(moving, loop));
+        return List.copyOf(frames);
+    }
+
+    private static Keyframe sample(List<Motion> moving, int t) {
+        float move = 0, scale = 1;
+        Vec3 offset = Vec3.ZERO, rotation = Vec3.ZERO;
+        Map<String, String> state = new java.util.LinkedHashMap<>();
+        for (Motion motion : moving) {
+            float length = Math.max(1, Math.round(Keyframe.duration(motion.keyframes)));
+            Keyframe at = Keyframe.at(motion.keyframes, t % length == 0 && t > 0 ? length : t % length);
+            move += at.move();
+            offset = offset.add(at.offset());
+            rotation = rotation.add(at.rotation());
+            scale *= at.scale();
+            state.putAll(at.state());
+        }
+        return new Keyframe(t, move, offset, rotation, scale, Map.copyOf(state));
+    }
+
+    private static int gcd(int a, int b) {
+        return b == 0 ? a : gcd(b, a % b);
+    }
+
     /** The looks a change goes through, as {@code setup} says (a change: its steps, each from its keyframe). */
     public List<Map<String, String>> steps(BlockState look, MotionSetup setup) {
         if (this == CHANGE) return setup.steps();

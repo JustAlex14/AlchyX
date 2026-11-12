@@ -452,6 +452,103 @@ public abstract class MultiblockCoreBlockEntity extends BlockEntity {
         return null;
     }
 
+    /**
+     * The Machine Studio's build: {@code added} blocks (by offset from the core) go into the standing machine as its
+     * parts, {@code removed} ones go (their contents drop; the blocks themselves are free, so they're not given back).
+     * The machine stays formed: its shape is recorded again from the result. Only a free-build machine, or one with a
+     * fixed shape completed once. Returns what happened, for the player. Server side.
+     */
+    public String rebuild(Map<BlockPos, BlockState> added, java.util.Collection<BlockPos> removed) {
+        if (level == null || level.isClientSide()) return "the server rebuilds machines";
+        if (!formed || forming) return "the machine must stand to be built in the studio";
+        com.lealex.alchyx.multiblock.FreeBuild rules = freeBuild();
+        MultiblockPattern file = filePattern(), current = pattern();
+        if (rules == null || file == null || current == null) return "this machine has a fixed shape: complete it once first";
+        Map<BlockPos, BlockState> cells = new java.util.LinkedHashMap<>();
+        java.util.Set<BlockPos> real = new java.util.HashSet<>();
+        for (BlockPos pos : current.occupiedPositions(worldPosition, rotation())) {
+            BlockPos offset = pos.subtract(worldPosition).immutable();
+            if (offset.equals(BlockPos.ZERO)) continue;
+            BlockState look = ChamberShellBlock.lookAt(level, pos);
+            if (look == null || look.isAir()) continue;
+            cells.put(offset, look);
+            if (!ShellParts.isPart(level.getBlockState(pos))) real.add(offset);
+        }
+        List<BlockPos> goes = new ArrayList<>();
+        for (BlockPos offset : removed) if (!offset.equals(BlockPos.ZERO) && cells.containsKey(offset) && !goes.contains(offset)) goes.add(offset.immutable());
+        Map<BlockPos, BlockState> comes = new java.util.LinkedHashMap<>();
+        int skipped = 0;
+        for (Map.Entry<BlockPos, BlockState> entry : added.entrySet()) {
+            BlockPos offset = entry.getKey().immutable(), pos = worldPosition.offset(offset);
+            BlockState state = entry.getValue();
+            BlockState there = level.getBlockState(pos);
+            boolean free = there.isAir() || (there.canBeReplaced() && !ShellParts.isPart(there) && !(there.getBlock() instanceof LiquidBlock));
+            if (offset.equals(BlockPos.ZERO) || (cells.containsKey(offset) && !goes.contains(offset)) || state.isAir()
+                    || ShellParts.isPart(state) || state.getBlock() instanceof com.lealex.alchyx.block.MultiblockCoreBlock
+                    || state.getDestroySpeed(level, pos) < 0 || !level.isLoaded(pos) || (!free && !goes.contains(offset))
+                    || CoreTracker.formedCoreAt(level, pos) != null && !worldPosition.equals(CoreTracker.formedCoreAt(level, pos))) {
+                skipped++;
+                continue;
+            }
+            comes.put(offset, state);
+        }
+        if (goes.isEmpty() && comes.isEmpty()) return skipped > 0 ? "none of those blocks could go there" : "nothing to build";
+        Map<BlockPos, BlockState> next = new java.util.LinkedHashMap<>(cells);
+        java.util.Set<BlockPos> nextReal = new java.util.HashSet<>(real);
+        for (BlockPos offset : goes) {
+            next.remove(offset);
+            nextReal.remove(offset);
+        }
+        for (Map.Entry<BlockPos, BlockState> entry : comes.entrySet()) {
+            next.put(entry.getKey(), entry.getValue());
+            if (staysReal(entry.getValue(), worldPosition.offset(entry.getKey()))) nextReal.add(entry.getKey());
+            else nextReal.remove(entry.getKey());
+        }
+        String problem = rules.checkCells(next);
+        if (problem != null) return problem;
+        BlockPos low = BlockPos.ZERO, high = BlockPos.ZERO;
+        for (BlockPos offset : next.keySet()) {
+            low = BlockPos.min(low, offset);
+            high = BlockPos.max(high, offset);
+        }
+        // The new shape first, so the machine never sees itself as broken while its blocks change
+        MultiblockPattern shape = rules.recordCells(next, nextReal, file.coreBlock(), low, high);
+        builtPattern = shape;
+        setRecordedShape(shape);
+        for (BlockPos offset : goes) {
+            BlockPos pos = worldPosition.offset(offset);
+            if (real.contains(offset)) level.destroyBlock(pos, false); // (a chest's contents still drop)
+            else level.setBlock(pos, Blocks.AIR.defaultBlockState(), Block.UPDATE_ALL);
+            motions.remove(offset);
+            setups.remove(offset);
+            poses.remove(offset);
+        }
+        for (Map.Entry<BlockPos, BlockState> entry : comes.entrySet()) {
+            BlockPos pos = worldPosition.offset(entry.getKey());
+            if (nextReal.contains(entry.getKey())) level.setBlock(pos, entry.getValue(), Block.UPDATE_ALL); // (an empty chest, a liquid)
+            // A part made from nothing: when the machine breaks it goes with it (only the blocks it was built from come back)
+            else ChamberShellBlock.place(level, pos, entry.getValue(), false, false);
+            if (level instanceof ServerLevel serverLevel) {
+                serverLevel.sendParticles(waveParticle(), pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5, 6, 0.3, 0.3, 0.3, 0.05);
+            }
+        }
+        motionsVersion++;
+        occupied = null;
+        refreshProtectedPositions();
+        invalidateStructureCapabilities();
+        setChanged();
+        syncToClients();
+        return "Built: " + comes.size() + " blocks added, " + goes.size() + " taken out" + (skipped > 0 ? " (" + skipped + " couldn't go there)" : "");
+    }
+
+    /** Whether a block put in by the studio stays a real block (liquids, and blocks that hold things), not a part. */
+    private boolean staysReal(BlockState state, BlockPos pos) {
+        if (state.getBlock() instanceof LiquidBlock) return true;
+        if (!(state.getBlock() instanceof net.minecraft.world.level.block.EntityBlock entityBlock)) return false;
+        BlockEntity made = entityBlock.newBlockEntity(pos, state);
+        return made instanceof net.minecraft.world.Container;
+    }
+
     /** Forgets the recorded shape: a formed machine breaks (its parts turn back into their blocks). False if none. */
     public boolean forgetShape() {
         if (recordedShape == null || level == null || level.isClientSide()) return false;

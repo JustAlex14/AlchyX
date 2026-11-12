@@ -4,7 +4,7 @@
   "effects": [],
   "alchyx_studio": {
     "motions": [
-      {"offset": [0, 1, 1], "motion": "spin", "setup": {"from": 20, "until": 80}},
+      {"offset": [0, 1, 1], "motion": "spin", "setup": {"from": 20, "until": 80, "also": ["bob"]}},
       {"offset": [0, 0, 2], "motion": "strike", "setup": {"from": 45, "until": 70}},
       {"offset": [0, -1, 1], "motion": "change", "setup": {
         "from": 5, "until": 100,

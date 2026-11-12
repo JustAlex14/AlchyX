@@ -24,7 +24,14 @@ import java.util.Optional;
  * "block": a cauldron that fills with water) and {@code times} (percent of the work, one per step, in order). Before
  * the first keyframe and after {@code until} the block looks as it is.
  */
-public record MotionSetup(int from, int until, List<Map<String, String>> steps, List<Integer> times) {
+public record MotionSetup(int from, int until, List<Map<String, String>> steps, List<Integer> times, List<Motion> also) {
+    /** The most motions one block plays together (its own and {@code also}). */
+    public static final int MAX_MOTIONS = 4;
+
+    public MotionSetup(int from, int until, List<Map<String, String>> steps, List<Integer> times) {
+        this(from, until, steps, times, List.of());
+    }
+
     public static final MotionSetup ALWAYS = new MotionSetup(0, 100, List.of(), List.of());
     /** The most state values one step sets, and the most steps. */
     public static final int MAX_STATE = 16, MAX_STEPS = 16;
@@ -36,9 +43,10 @@ public record MotionSetup(int from, int until, List<Map<String, String>> steps, 
             Codec.intRange(0, 100).optionalFieldOf("until", 100).forGetter(MotionSetup::until),
             STATE.optionalFieldOf("state").forGetter(setup -> Optional.empty()), // (one step, as first saved)
             STATE.listOf().optionalFieldOf("steps", List.of()).forGetter(MotionSetup::steps),
-            Codec.INT.listOf().optionalFieldOf("times", List.of()).forGetter(MotionSetup::times)
-    ).apply(instance, (from, until, state, steps, times) -> state.isPresent() && steps.isEmpty()
-            ? new MotionSetup(from, until, List.of(state.get()), List.of(from)) : new MotionSetup(from, until, steps, times)));
+            Codec.INT.listOf().optionalFieldOf("times", List.of()).forGetter(MotionSetup::times),
+            Motion.CODEC.listOf().optionalFieldOf("also", List.of()).forGetter(MotionSetup::also)
+    ).apply(instance, (from, until, state, steps, times, also) -> state.isPresent() && steps.isEmpty()
+            ? new MotionSetup(from, until, List.of(state.get()), List.of(from), also) : new MotionSetup(from, until, steps, times, also)));
 
     public static final StreamCodec<ByteBuf, MotionSetup> STREAM_CODEC = StreamCodec.composite(
             ByteBufCodecs.VAR_INT, MotionSetup::from,
@@ -46,11 +54,27 @@ public record MotionSetup(int from, int until, List<Map<String, String>> steps, 
             ByteBufCodecs.<ByteBuf, String, String, Map<String, String>>map(LinkedHashMap::new, ByteBufCodecs.stringUtf8(64),
                     ByteBufCodecs.stringUtf8(64), MAX_STATE).apply(ByteBufCodecs.list(MAX_STEPS)), MotionSetup::steps,
             ByteBufCodecs.VAR_INT.apply(ByteBufCodecs.list(MAX_STEPS)), MotionSetup::times,
+            ByteBufCodecs.idMapper(i -> Motion.values()[Math.floorMod(i, Motion.values().length)], Motion::ordinal)
+                    .apply(ByteBufCodecs.list(MAX_MOTIONS)), MotionSetup::also,
             MotionSetup::new);
 
     public MotionSetup {
         steps = steps.stream().map(Map::copyOf).toList();
         times = List.copyOf(times);
+        also = List.copyOf(also);
+    }
+
+    /** With these motions played too, besides the block's own (a drill: it strikes and spins). */
+    public MotionSetup withAlso(List<Motion> also) {
+        return new MotionSetup(from, until, steps, times, also);
+    }
+
+    /** All the motions the block plays: {@code main}, then {@code also}. */
+    public List<Motion> all(Motion main) {
+        List<Motion> all = new ArrayList<>();
+        all.add(main);
+        for (Motion motion : also) if (!all.contains(motion)) all.add(motion);
+        return all;
     }
 
     /** Whether it plays all the time (no window in the work). */
@@ -64,7 +88,7 @@ public record MotionSetup(int from, int until, List<Map<String, String>> steps, 
     }
 
     public MotionSetup withTimes(int from, int until) {
-        return new MotionSetup(from, until, steps, times);
+        return new MotionSetup(from, until, steps, times, also);
     }
 
     /** When step {@code index} comes (percent of the work): its keyframe, or its even share of the time. */
@@ -131,12 +155,12 @@ public record MotionSetup(int from, int until, List<Map<String, String>> steps, 
             t.add(Math.max(0, Math.min(100, newTimes.get(i))));
         }
         int start = t.isEmpty() ? from : t.getFirst();
-        return new MotionSetup(start, Math.max(start, until), s, t);
+        return new MotionSetup(start, Math.max(start, until), s, t, also);
     }
 
     /** Without steps (for a motion that isn't a change). */
     public MotionSetup withoutSteps() {
-        return new MotionSetup(from, until, List.of(), List.of());
+        return new MotionSetup(from, until, List.of(), List.of(), also);
     }
 
     /** The blocks a look may become in a step ("block"): a cauldron holds nothing, water, lava or powder snow. */
@@ -165,7 +189,18 @@ public record MotionSetup(int from, int until, List<Map<String, String>> steps, 
      */
     public MotionSetup tidy(Motion motion, BlockState look) {
         int a = Math.max(0, Math.min(100, from)), b = Math.max(0, Math.min(100, until));
-        if (motion != Motion.CHANGE) return new MotionSetup(Math.min(a, b), Math.max(a, b), List.of(), List.of());
+        // The other motions it plays: each once, that fit the block, at most one that changes its look (with its own)
+        List<Motion> keptAlso = new ArrayList<>();
+        boolean looks = !motion.moves();
+        for (Motion other : also) {
+            if (other == null || other == motion || other == Motion.CHANGE || keptAlso.contains(other) || !other.fits(look) || keptAlso.size() >= MAX_MOTIONS - 1) continue;
+            if (!other.moves()) {
+                if (looks) continue;
+                looks = true;
+            }
+            keptAlso.add(other);
+        }
+        if (motion != Motion.CHANGE) return new MotionSetup(Math.min(a, b), Math.max(a, b), List.of(), List.of(), keptAlso);
         List<Map<String, String>> kept = new ArrayList<>();
         List<Integer> keptTimes = new ArrayList<>();
         for (int i = 0; i < steps.size() && kept.size() < MAX_STEPS; i++) {
@@ -181,6 +216,6 @@ public record MotionSetup(int from, int until, List<Map<String, String>> steps, 
             kept.add(good);
             keptTimes.add(Math.max(0, Math.min(100, time(i))));
         }
-        return new MotionSetup(Math.min(a, b), Math.max(a, b), List.of(), List.of()).sorted(kept, keptTimes);
+        return new MotionSetup(Math.min(a, b), Math.max(a, b), List.of(), List.of(), keptAlso).sorted(kept, keptTimes);
     }
 }

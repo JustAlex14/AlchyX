@@ -1,0 +1,29 @@
+{
+  "core": "mypack:egg_hatchery_core",
+  "front": "north",
+  "anchors": {"center": [0, 0, 1], "spawner": [0, 1, 1], "cauldron": [0, -1, 1]},
+  "layers": [
+    ["BBB", "BCB", "BBB"],
+    ["BXB", "G.G", "BPB"],
+    ["BBB", "BSB", "BBB"]
+  ],
+  "key": {
+    "B": {"block": "minecraft:polished_blackstone_bricks", "name": "polished blackstone bricks"},
+    "G": {"block": "minecraft:glass", "name": "glass"},
+    "C": {"block": "minecraft:cauldron", "name": "an empty cauldron (under the center)"},
+    "S": {"block": "minecraft:spawner", "name": "a spawner (over the center)"},
+    "P": {"block": "minecraft:piston", "state": {"facing": "north"}, "name": "a piston facing the center (behind it)"},
+    "X": {"core": true},
+    ".": {"air": true}
+  },
+  "result": [
+    ["sss", "sss", "sss"],
+    ["sXs", "s.s", "sss"],
+    ["sss", "sss", "sss"]
+  ],
+  "result_key": {
+    "s": {"same": true},
+    "X": {"keep": true},
+    ".": {"keep": true}
+  }
+}

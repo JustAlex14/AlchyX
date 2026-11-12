@@ -1,0 +1,40 @@
+{
+  "machine": "mypack:egg_hatchery",
+  "replace": false,
+  "effects": [],
+  "alchyx_studio": {
+    "motions": [
+      {"offset": [0, 1, 1], "motion": "spin", "setup": {"from": 20, "until": 80}},
+      {"offset": [0, 0, 2], "motion": "strike", "setup": {"from": 45, "until": 70}},
+      {"offset": [0, -1, 1], "motion": "change", "setup": {
+        "from": 5, "until": 100,
+        "steps": [
+          {"block": "minecraft:water_cauldron", "level": "1"},
+          {"block": "minecraft:water_cauldron", "level": "2"},
+          {"block": "minecraft:water_cauldron", "level": "3"},
+          {"block": "minecraft:powder_snow_cauldron", "level": "3"},
+          {"block": "minecraft:cauldron"}
+        ],
+        "times": [5, 20, 35, 60, 90]
+      }}
+    ],
+    "marks": [
+      {"offset": [0, 0, 1], "kind": "item", "id": "input", "to": [0, 1, 1],
+       "items": ["input", "minecraft:egg", "output"],
+       "shows": [
+         {"from": 0, "until": 40, "style": "spin"},
+         {"from": 40, "until": 60, "style": "travel"},
+         {"from": 70, "until": 100, "style": "bob"}
+       ]},
+      {"offset": [0, 2, 1], "kind": "particles", "id": "minecraft:soul_fire_flame", "times": {"show_from": 20, "show_until": 80}},
+      {"offset": [0, -1, 1], "kind": "particles", "id": "minecraft:bubble_pop", "times": {"show_from": 5, "show_until": 55}},
+      {"offset": [1, 0, -1], "kind": "figure", "id": "minecraft:witch", "yaw": 0},
+      {"offset": [-1, 0, -1], "kind": "figure", "id": "minecraft:chicken", "yaw": 0, "times": {"show_from": 0, "show_until": 40}},
+      {"offset": [0, 1, 1], "kind": "sound", "id": "minecraft:block.trial_spawner.spawn_mob", "yaw": 0, "times": {"show_from": 60, "show_until": 65}},
+      {"offset": [0, 0, 2], "kind": "sound", "id": "minecraft:block.piston.extend", "yaw": 20, "times": {"show_from": 45, "show_until": 70}},
+      {"offset": [0, 0, 0], "kind": "sound", "id": "minecraft:block.brewing_stand.brew", "yaw": 0, "times": {"show_from": 5, "show_until": 10}},
+      {"offset": [0, 1, 0], "kind": "sound", "id": "minecraft:entity.chicken.egg", "yaw": 0, "times": {"show_from": 0, "show_until": 5}}
+    ],
+    "hide_file": false
+  }
+}

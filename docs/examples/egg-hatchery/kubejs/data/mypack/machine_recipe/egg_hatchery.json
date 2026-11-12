@@ -1,0 +1,6 @@
+{
+  "machine": "mypack:egg_hatchery_core",
+  "inputs": [{"item": "minecraft:egg"}],
+  "outputs": [],
+  "time": 100
+}

@@ -120,6 +120,8 @@ The Machine Studio also opens on machines with a fixed shape (AlchyMastery's, fo
 
 The preview also plays the machine's own block moves (a piston striking, from its animation file) while its own animation is on.
 
+An example to import, a KubeJS **Egg Hatchery** (an egg in, a random spawn egg out) whose animation uses every studio feature: [docs/examples/egg-hatchery](https://github.com/JustAlex14/AlchyX/tree/free-build/docs/examples/egg-hatchery).
+
 What you save is kept on that one machine only. Block data (**Data...**) stays on the machine and isn't exported.
 
 A mod can keep the studio off its machines: its core block entity returns `false` from `studioEditable()` (for a machine that draws itself in its own code). A pack can do the same for any machine by adding its core block to the block tag `alchyx:studio_locked`.

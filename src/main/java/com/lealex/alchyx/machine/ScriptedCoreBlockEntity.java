@@ -217,7 +217,7 @@ public class ScriptedCoreBlockEntity extends MultiblockCoreBlockEntity implement
             return;
         }
         if (!inputsPresent(recipe) || !outputsFit(recipe)) {
-            com.lealex.alchyx.AlchyX.LOGGER.debug("AlchyX: {} stopped {}: {}", getBlockPos(), currentRecipe,
+            com.lealex.alchyx.AlchyX.LOGGER.debug("AlchyX: {} stopped {}: {}, slots {}", getBlockPos(), currentRecipe,
                     inputsPresent(recipe) ? "its outputs don't fit" : "its inputs are gone", items.copyToList());
             resetOperation();
             setAnimationWorking(false);
@@ -248,12 +248,16 @@ public class ScriptedCoreBlockEntity extends MultiblockCoreBlockEntity implement
     /** Looks for the first recipe that can run and starts it (if no script cancels it). */
     private void startNext() {
         lookupDirty = false;
+        com.lealex.alchyx.AlchyX.LOGGER.debug("AlchyX: {} looks for a recipe, slots {}, speed {}", getBlockPos(), items.copyToList(), speed);
         lookupGeneration = MachineRecipes.generation();
         for (Map.Entry<Identifier, MachineRecipe> entry : MachineRecipes.forMachine(spec.recipeType())) {
             MachineRecipe recipe = entry.getValue();
             if (!inputsPresent(recipe) || !outputsFit(recipe)) continue;
             resultByScript = false;
-            if (!MachineHooks.get().starting(this, entry.getKey())) return;
+            if (!MachineHooks.get().starting(this, entry.getKey())) {
+                com.lealex.alchyx.AlchyX.LOGGER.debug("AlchyX: {} {} cancelled by a script, slots {}", getBlockPos(), entry.getKey(), items.copyToList());
+                return;
+            }
             currentRecipe = entry.getKey();
             progress = 0;
             pace = 0;

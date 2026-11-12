@@ -9,11 +9,21 @@ A free-build machine has no fixed shape. Each player builds it the way they like
 3. Use the Recorder on a block: the first corner of the box. Use it on the opposite block: the second corner. The box shows as lines of sparks while the Recorder is in hand.
 4. Use the Recorder on the core. If the build follows the rules, it is recorded and the machine forms. If not, chat says what is wrong: the box is too big, a block is not allowed, or some required blocks are missing.
 
-After that the machine works like any other: break a block of it and it unforms, put it back and it forms again. The parts look exactly like the blocks you placed, and when the machine breaks they turn back into those blocks (nothing is lost).
+After that the machine works like any other: break a block of it and it unforms, put it back and it forms again. The parts look exactly like the blocks you placed, and when the machine breaks they turn back into those blocks (nothing is lost). Blocks put in later from the studio's **Build** tab are the exception: they are made from nothing, so they go with the machine when it breaks.
+
+### More with the Recorder
+
+- **Sneak + use the Recorder on the core**: forget its shape, to rebuild it differently. A formed machine breaks first.
+- **Sneak + use the Recorder in the air**: forget the corners.
+- Chests, barrels and other blocks that hold things (items, fluid or energy, modded ones too) stay real blocks, so they keep what is in them. So do liquids. Other blocks with data (a spawner, a banner, a sign, a head...) become parts that keep their data and show it: a spawner shows its mob turning (but spawns nothing), and gets its data back as it was when the machine breaks. Change what they show with **Data...** in the studio.
+- A piston in the machine is never an opaque part, so the blocks around it don't show holes when it strikes.
+- The Structure Builder rebuilds a free-build machine's recorded shape, like any other machine.
+
+The Recorder's recipe: a stick, a compass, two gold ingots and an amethyst shard (diagonal, the shard at the top right).
 
 ### Making blocks move
 
-Once the machine stands, use the Recorder on any of its blocks to make that block move while the machine works. Each use picks the next motion, then back to still:
+The quick way, in the world (the Machine Studio below does all of this and much more): once the machine stands, use the Recorder on any of its blocks to make that block move while the machine works. Each use picks the next motion, then back to still:
 
 | Motion | What the block does |
 |---|---|
@@ -50,17 +60,10 @@ Once the machine stands, **sneak and right-click its core with an empty hand** (
 - **The timeline**: over the work bar (the player), each timed thing has a track with a bar from where it starts to where it ends: the chosen blocks' motion (Blocks tab), or the chosen anchor and each of its items (Anchors tab), so an item can come in at one keyframe and go at another, and two can overlap. Drag a bar's ends, or the whole bar, along the work: they snap to the player's head and to the other keyframes. Click beside a bar to move the player there. Times show in seconds of the preview's work (5 s; on the machine they stretch to its real work). The buttons still work too: **Appear here** / **Vanish here** for an anchor, **Leave here** / **Arrive here** for a traveling display, **Reset times**; **Start here** / **Stop here** / **Always** for blocks.
 - To put an anchor **inside** the build (the result appearing in the middle of the crusher), hide the top layers with **-**, then click the top of the block under the spot.
 - **Play / Pause** (or Space) previews the motions in the view, before anything changes in the world.
-- **Save** sends the motions to the machine. **Close** leaves without saving.
+- **Save** sends everything to the machine at once: the build, the motions, the shapes, the anchors and the minis built here. **Close** leaves without saving.
 
 The machine must stay formed and within 16 blocks while the screen is open. Only motions the machine allows are offered, and the server checks them again on save.
 
-- **Sneak + use the Recorder on the core**: forget its shape, to rebuild it differently. A formed machine breaks first.
-- **Sneak + use the Recorder in the air**: forget the corners.
-- Chests, barrels and other blocks that hold things (items, fluid or energy, modded ones too) stay real blocks, so they keep what is in them. So do liquids. Other blocks with data (a spawner, a banner, a sign, a head...) become parts that keep their data and show it: a spawner shows its mob turning (but spawns nothing), and gets its data back as it was when the machine breaks. Change what they show with **Data...** in the studio.
-- A piston in the machine is never an opaque part, so the blocks around it don't show holes when it strikes.
-- The Structure Builder rebuilds a free-build machine's recorded shape, like any other machine.
-
-Recipe: a stick, a compass, two gold ingots and an amethyst shard (diagonal, the shard at the top right).
 
 ## For mod and modpack makers
 

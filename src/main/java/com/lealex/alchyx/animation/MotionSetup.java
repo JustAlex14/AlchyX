@@ -24,12 +24,17 @@ import java.util.Optional;
  * "block": a cauldron that fills with water) and {@code times} (percent of the work, one per step, in order). Before
  * the first keyframe and after {@code until} the block looks as it is.
  */
-public record MotionSetup(int from, int until, List<Map<String, String>> steps, List<Integer> times, List<Motion> also) {
+public record MotionSetup(int from, int until, List<Map<String, String>> steps, List<Integer> times, List<Motion> also,
+                          List<Identifier> mods) {
+    public MotionSetup(int from, int until, List<Map<String, String>> steps, List<Integer> times, List<Motion> also) {
+        this(from, until, steps, times, also, List.of());
+    }
+
     /** The most motions one block plays together (its own and {@code also}). */
     public static final int MAX_MOTIONS = 4;
 
     public MotionSetup(int from, int until, List<Map<String, String>> steps, List<Integer> times) {
-        this(from, until, steps, times, List.of());
+        this(from, until, steps, times, List.of(), List.of());
     }
 
     public static final MotionSetup ALWAYS = new MotionSetup(0, 100, List.of(), List.of());
@@ -44,9 +49,10 @@ public record MotionSetup(int from, int until, List<Map<String, String>> steps, 
             STATE.optionalFieldOf("state").forGetter(setup -> Optional.empty()), // (one step, as first saved)
             STATE.listOf().optionalFieldOf("steps", List.of()).forGetter(MotionSetup::steps),
             Codec.INT.listOf().optionalFieldOf("times", List.of()).forGetter(MotionSetup::times),
-            Motion.CODEC.listOf().optionalFieldOf("also", List.of()).forGetter(MotionSetup::also)
-    ).apply(instance, (from, until, state, steps, times, also) -> state.isPresent() && steps.isEmpty()
-            ? new MotionSetup(from, until, List.of(state.get()), List.of(from), also) : new MotionSetup(from, until, steps, times, also)));
+            Motion.CODEC.listOf().optionalFieldOf("also", List.of()).forGetter(MotionSetup::also),
+            Identifier.CODEC.listOf().optionalFieldOf("mods", List.of()).forGetter(MotionSetup::mods)
+    ).apply(instance, (from, until, state, steps, times, also, mods) -> state.isPresent() && steps.isEmpty()
+            ? new MotionSetup(from, until, List.of(state.get()), List.of(from), also, mods) : new MotionSetup(from, until, steps, times, also, mods)));
 
     public static final StreamCodec<ByteBuf, MotionSetup> STREAM_CODEC = StreamCodec.composite(
             ByteBufCodecs.VAR_INT, MotionSetup::from,
@@ -56,17 +62,24 @@ public record MotionSetup(int from, int until, List<Map<String, String>> steps, 
             ByteBufCodecs.VAR_INT.apply(ByteBufCodecs.list(MAX_STEPS)), MotionSetup::times,
             ByteBufCodecs.idMapper(i -> Motion.values()[Math.floorMod(i, Motion.values().length)], Motion::ordinal)
                     .apply(ByteBufCodecs.list(MAX_MOTIONS)), MotionSetup::also,
+            Identifier.STREAM_CODEC.apply(ByteBufCodecs.list(MAX_MOTIONS)), MotionSetup::mods,
             MotionSetup::new);
 
     public MotionSetup {
         steps = steps.stream().map(Map::copyOf).toList();
         times = List.copyOf(times);
         also = List.copyOf(also);
+        mods = List.copyOf(mods);
+    }
+
+    /** With these motions of other mods played too ({@link StudioMotions}). */
+    public MotionSetup withMods(List<Identifier> mods) {
+        return new MotionSetup(from, until, steps, times, also, mods);
     }
 
     /** With these motions played too, besides the block's own (a drill: it strikes and spins). */
     public MotionSetup withAlso(List<Motion> also) {
-        return new MotionSetup(from, until, steps, times, also);
+        return new MotionSetup(from, until, steps, times, also, mods);
     }
 
     /** All the motions the block plays: {@code main}, then {@code also}. */
@@ -88,7 +101,7 @@ public record MotionSetup(int from, int until, List<Map<String, String>> steps, 
     }
 
     public MotionSetup withTimes(int from, int until) {
-        return new MotionSetup(from, until, steps, times, also);
+        return new MotionSetup(from, until, steps, times, also, mods);
     }
 
     /** When step {@code index} comes (percent of the work): its keyframe, or its even share of the time. */
@@ -155,12 +168,12 @@ public record MotionSetup(int from, int until, List<Map<String, String>> steps, 
             t.add(Math.max(0, Math.min(100, newTimes.get(i))));
         }
         int start = t.isEmpty() ? from : t.getFirst();
-        return new MotionSetup(start, Math.max(start, until), s, t, also);
+        return new MotionSetup(start, Math.max(start, until), s, t, also, mods);
     }
 
     /** Without steps (for a motion that isn't a change). */
     public MotionSetup withoutSteps() {
-        return new MotionSetup(from, until, List.of(), List.of(), also);
+        return new MotionSetup(from, until, List.of(), List.of(), also, mods);
     }
 
     /** The blocks a look may become in a step ("block"): a cauldron holds nothing, water, lava or powder snow. */
@@ -200,7 +213,11 @@ public record MotionSetup(int from, int until, List<Map<String, String>> steps, 
             }
             keptAlso.add(other);
         }
-        if (motion != Motion.CHANGE) return new MotionSetup(Math.min(a, b), Math.max(a, b), List.of(), List.of(), keptAlso);
+        List<Identifier> keptMods = new ArrayList<>();
+        for (Identifier id : mods) {
+            if (id != null && !keptMods.contains(id) && StudioMotions.fits(id, look) && keptMods.size() < MAX_MOTIONS) keptMods.add(id);
+        }
+        if (motion != Motion.CHANGE) return new MotionSetup(Math.min(a, b), Math.max(a, b), List.of(), List.of(), keptAlso, keptMods);
         List<Map<String, String>> kept = new ArrayList<>();
         List<Integer> keptTimes = new ArrayList<>();
         for (int i = 0; i < steps.size() && kept.size() < MAX_STEPS; i++) {
@@ -216,6 +233,6 @@ public record MotionSetup(int from, int until, List<Map<String, String>> steps, 
             kept.add(good);
             keptTimes.add(Math.max(0, Math.min(100, time(i))));
         }
-        return new MotionSetup(Math.min(a, b), Math.max(a, b), List.of(), List.of(), keptAlso).sorted(kept, keptTimes);
+        return new MotionSetup(Math.min(a, b), Math.max(a, b), List.of(), List.of(), keptAlso, keptMods).sorted(kept, keptTimes);
     }
 }

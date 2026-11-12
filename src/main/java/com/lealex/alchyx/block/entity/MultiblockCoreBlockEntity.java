@@ -691,7 +691,7 @@ public abstract class MultiblockCoreBlockEntity extends BlockEntity {
         if (!clear) {
             BlockState look = com.lealex.alchyx.block.ChamberShellBlock.lookAt(level, pos);
             List<com.lealex.alchyx.animation.Motion> fitting = rules.motions().stream()
-                    .filter(m -> m != com.lealex.alchyx.animation.Motion.CHANGE && m.fits(look)).toList(); // (a change needs the studio)
+                    .filter(m -> m != com.lealex.alchyx.animation.Motion.CHANGE && m != com.lealex.alchyx.animation.Motion.MOD && m.fits(look)).toList(); // (a change needs the studio)
             int index = now == null ? -1 : fitting.indexOf(now);
             next = index + 1 < fitting.size() ? fitting.get(index + 1) : null;
         }
@@ -719,14 +719,17 @@ public abstract class MultiblockCoreBlockEntity extends BlockEntity {
         Map<BlockPos, com.lealex.alchyx.animation.Motion> kept = new java.util.LinkedHashMap<>();
         Map<BlockPos, com.lealex.alchyx.animation.MotionSetup> keptSetups = new java.util.LinkedHashMap<>();
         for (Map.Entry<BlockPos, com.lealex.alchyx.animation.Motion> entry : wanted.entrySet()) {
-            if (entry.getValue() == null || !rules.motions().contains(entry.getValue())) continue;
+            boolean mod = entry.getValue() == com.lealex.alchyx.animation.Motion.MOD; // (other mods' motions: any machine that has motions)
+            if (entry.getValue() == null || !(rules.motions().contains(entry.getValue()) || mod && !rules.motions().isEmpty())) continue;
             BlockPos pos = worldPosition.offset(entry.getKey());
             if (!ShellParts.isPart(level.getBlockState(pos)) || !structureContains(pos)) continue;
             BlockState look = com.lealex.alchyx.block.ChamberShellBlock.lookAt(level, pos);
             if (!entry.getValue().fits(look)) continue;
+            com.lealex.alchyx.animation.MotionSetup setup = wantedSetups.getOrDefault(entry.getKey(), com.lealex.alchyx.animation.MotionSetup.ALWAYS).tidy(entry.getValue(), look);
+            setup = setup.withAlso(setup.also().stream().filter(rules.motions()::contains).toList());
+            if (mod && setup.mods().isEmpty()) continue;
             kept.put(entry.getKey().immutable(), entry.getValue());
             com.lealex.alchyx.block.ChamberShellBlock.unseal(level, pos);
-            com.lealex.alchyx.animation.MotionSetup setup = wantedSetups.getOrDefault(entry.getKey(), com.lealex.alchyx.animation.MotionSetup.ALWAYS).tidy(entry.getValue(), look);
             if (!setup.equals(com.lealex.alchyx.animation.MotionSetup.ALWAYS)) keptSetups.put(entry.getKey().immutable(), setup);
         }
         BlockPos[] box = studioBox();

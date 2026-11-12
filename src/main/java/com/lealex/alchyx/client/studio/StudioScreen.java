@@ -284,10 +284,13 @@ public class StudioScreen extends Screen {
         int py = LIST_TOP;
         List<@Nullable Motion> choices = new ArrayList<>();
         choices.add(null);
-        choices.addAll(rules.motions());
-        int columns = choices.size() > 12 ? 3 : choices.size() > 6 ? 2 : 1, column = 0;
+        for (Motion motion : rules.motions()) if (motion != Motion.MOD) choices.add(motion);
+        List<com.lealex.alchyx.animation.StudioMotions.Custom> mods = rules.motions().isEmpty() ? List.of()
+                : com.lealex.alchyx.animation.StudioMotions.all(); // other mods' motions (a Create press...)
+        int count = choices.size() + mods.size();
+        int columns = count > 12 ? 3 : count > 6 ? 2 : 1, column = 0;
         int buttonWide = (wide - 2 * (columns - 1)) / columns;
-        motionRows = (choices.size() + columns - 1) / columns;
+        motionRows = (count + columns - 1) / columns;
         for (Motion motion : choices) {
             Button button = addRenderableWidget(Button.builder(Component.literal(label(motion)), b -> give(motion))
                     .bounds(px + column * (buttonWide + 2), py, buttonWide, 18).build());
@@ -295,6 +298,21 @@ public class StudioScreen extends Screen {
                     : ". Shift+click: play it too, with the block's own motion (a drill: Strike, then Shift+click Spin)"))));
             motionButtons.add(button);
             motionChoices.add(motion);
+            if (++column == columns) {
+                column = 0;
+                py += ROW;
+            }
+        }
+        modButtons.clear();
+        modChoices.clear();
+        for (com.lealex.alchyx.animation.StudioMotions.Custom custom : mods) {
+            Identifier id = custom.id();
+            Button button = addRenderableWidget(Button.builder(Component.literal(custom.name()), b -> giveMod(id))
+                    .bounds(px + column * (buttonWide + 2), py, buttonWide, 18).build());
+            button.setTooltip(Tooltip.create(Component.literal(custom.name() + " (from " + id.getNamespace()
+                    + "). Shift+click: play it too, with the block's own motion")));
+            modButtons.add(button);
+            modChoices.add(custom);
             if (++column == columns) {
                 column = 0;
                 py += ROW;
@@ -435,6 +453,7 @@ public class StudioScreen extends Screen {
             case GROW -> "Grows: crops, saplings, anything with an age";
             case CHANGE -> "Changes to the state you pick (State...): any block with a state, a trial spawner, a vault, modded blocks...";
             case OPEN -> "Opens: barrels, trapdoors, doors, fence gates";
+            case MOD -> "Plays only motions other mods added";
         };
     }
 
@@ -707,6 +726,17 @@ public class StudioScreen extends Screen {
                     && chosen.stream().allMatch(cell -> setups.getOrDefault(cell, MotionSetup.ALWAYS).also().contains(motion) && edits.containsKey(cell));
             button.setMessage(Component.literal(current ? "> " + label(motion) + " <" : also ? "+ " + label(motion) : label(motion)));
         }
+        for (int i = 0; i < modButtons.size(); i++) {
+            Button button = modButtons.get(i);
+            com.lealex.alchyx.animation.StudioMotions.Custom custom = modChoices.get(i);
+            button.visible = blocks;
+            button.active = !chosen.isEmpty() && chosen.stream().allMatch(cell -> looks.get(cell) != null && custom.fits().test(looks.get(cell)));
+            boolean alone = !chosen.isEmpty() && chosen.stream().allMatch(cell -> edits.get(cell) == Motion.MOD
+                    && setups.getOrDefault(cell, MotionSetup.ALWAYS).mods().equals(List.of(custom.id())));
+            boolean with = !alone && !chosen.isEmpty() && chosen.stream().allMatch(cell -> edits.containsKey(cell)
+                    && setups.getOrDefault(cell, MotionSetup.ALWAYS).mods().contains(custom.id()));
+            button.setMessage(Component.literal(alone ? "> " + custom.name() + " <" : with ? "+ " + custom.name() : custom.name()));
+        }
 
         boolean moving = !chosen.isEmpty();
         for (BlockPos cell : chosen) if (!edits.containsKey(cell)) moving = false;
@@ -765,6 +795,35 @@ public class StudioScreen extends Screen {
     }
 
     // ---- Changes ----
+
+    private final List<Button> modButtons = new ArrayList<>();
+    private final List<com.lealex.alchyx.animation.StudioMotions.Custom> modChoices = new ArrayList<>();
+
+    /** Gives the chosen blocks a motion another mod added: alone, or (Shift) played too with their own. */
+    private void giveMod(Identifier id) {
+        boolean too = Minecraft.getInstance().hasShiftDown();
+        for (BlockPos cell : chosen) {
+            BlockState look = looks.get(cell);
+            if (look == null || !com.lealex.alchyx.animation.StudioMotions.fits(id, look)) continue;
+            Motion main = edits.get(cell);
+            MotionSetup setup = setups.getOrDefault(cell, MotionSetup.ALWAYS);
+            if (main == null || !too) {
+                edits.put(cell, Motion.MOD);
+                putSetup(cell, new MotionSetup(setup.from(), setup.until(), List.of(), List.of(), List.of(), List.of(id)));
+                continue;
+            }
+            List<Identifier> mods = new ArrayList<>(setup.mods());
+            if (!mods.remove(id)) mods.add(id);
+            if (main == Motion.MOD && mods.isEmpty()) {
+                edits.remove(cell);
+                setups.remove(cell);
+            } else {
+                putSetup(cell, setup.withMods(mods));
+            }
+        }
+        stillDirty = true;
+        refreshButtons();
+    }
 
     private void give(@Nullable Motion motion) {
         if (motion != null && motion != Motion.CHANGE && Minecraft.getInstance().hasShiftDown()) { // played too, with the block's own
@@ -2024,8 +2083,15 @@ public class StudioScreen extends Screen {
     }
 
     private boolean anyMoves(BlockPos cell) {
-        for (Motion motion : allMotions(cell)) if (motion.moves()) return true;
-        return false;
+        return !moves(cell).loops().isEmpty();
+    }
+
+    /** What moves a block plays (its motions' and mods' moves), as on the machine. */
+    private Motion.Moves moves(BlockPos cell) {
+        Motion motion = edits.get(cell);
+        BlockState look = looks.get(cell);
+        if (motion == null || look == null) return new Motion.Moves(List.of(), "up", null);
+        return Motion.moves(motion, setups.getOrDefault(cell, MotionSetup.ALWAYS), look);
     }
 
     /** The motion that changes the block's own look (light, fill, change...), if it plays one. */
@@ -2079,17 +2145,17 @@ public class StudioScreen extends Screen {
                     addPiece(pieces, cell, new StudioRenderState.Piece(pieceMesh(shown), Vec3.atLowerCornerOf(cell), Vec3.ZERO, 1));
                     continue;
                 }
-                List<Motion> moving = new ArrayList<>();
-                for (Motion motion : allMotions(cell)) if (motion.moves()) moving.add(motion);
-                if (moving.contains(Motion.STRIKE) && Motion.isPiston(look)) {
+                if (allMotions(cell).contains(Motion.STRIKE) && Motion.isPiston(look)) {
                     piston(pieces, cell, look, time);
                     continue;
                 }
-                // One motion, or several played together (a drill strikes and spins)
-                List<Keyframe> frames = moving.size() == 1 ? moving.getFirst().keyframes() : Motion.combine(moving);
+                // One motion, or several played together (a drill strikes and spins), mods' too
+                Motion.Moves moves = moves(cell);
+                List<Keyframe> frames = moves.loops().size() == 1 ? moves.loops().getFirst() : Motion.combineLoops(moves.loops());
                 float loop = Math.max(1, Keyframe.duration(frames));
                 Keyframe pose = Keyframe.at(frames, time % loop);
-                Direction d = direction(Motion.directionOf(moving).equals("facing") ? Motion.STRIKE : Motion.SPIN, cell, look);
+                shown = BlockLook.apply(shown, Keyframe.stateAt(frames, time % loop));
+                Direction d = direction(moves.direction(), cell, look);
                 Vec3 at = Vec3.atLowerCornerOf(cell).add(d.getStepX() * pose.move(), d.getStepY() * pose.move(), d.getStepZ() * pose.move())
                         .add(pose.offset());
                 addPiece(pieces, cell, new StudioRenderState.Piece(pieceMesh(shown), at, pose.rotation(), pose.scale()));
@@ -2350,7 +2416,15 @@ public class StudioScreen extends Screen {
 
     /** The way a motion moves along at this cell: up, or for "facing" the block's facing (else toward the core). */
     private Direction direction(Motion motion, BlockPos cell, BlockState look) {
-        if (!"facing".equals(motion.direction())) return Direction.UP;
+        return direction(motion.direction(), cell, look);
+    }
+
+    /** A move's way: "facing" (the block's, else toward the core), or a direction ("up", "north"...). */
+    private Direction direction(String way, BlockPos cell, BlockState look) {
+        if (!"facing".equals(way)) {
+            Direction named = Direction.byName(way);
+            return named == null ? Direction.UP : named;
+        }
         Property<?> property = look.getBlock().getStateDefinition().getProperty("facing");
         if (property != null && look.getValue(property) instanceof Direction facing) return facing;
         BlockPos offset = cell.offset(min);

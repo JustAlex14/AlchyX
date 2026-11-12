@@ -57,7 +57,9 @@ public enum Motion implements StringRepresentable {
      * Takes the state values its player picked (see {@link MotionSetup}): any block with a state, modded ones too
      * (a trial spawner turned active, a vault ejecting, a lamp lit...).
      */
-    CHANGE("change", "up", List.of());
+    CHANGE("change", "up", List.of()),
+    /** Plays only the motions other mods added ({@link StudioMotions}), named in its setup's "mods". */
+    MOD("mod", "up", List.of());
 
     /** The state numbers that say how full a block is, by name (vanilla's and most mods'). */
     private static final List<String> FILL_PROPERTIES = List.of("level", "honey_level", "charges", "layers", "pickles", "candles",
@@ -216,26 +218,49 @@ public enum Motion implements StringRepresentable {
      */
     public static List<Effect> effects(Motion main, String anchor, Trigger when, BlockState look, MotionSetup setup) {
         List<Effect> effects = new java.util.ArrayList<>();
-        List<Motion> moving = new java.util.ArrayList<>();
         for (Motion motion : setup.all(main)) {
-            if (motion.moves() && !(motion == STRIKE && isPiston(look))) {
-                moving.add(motion);
-                continue;
-            }
+            if (motion == MOD || (motion.moves() && !(motion == STRIKE && isPiston(look)))) continue;
             Effect effect = motion.effect(anchor, when, look, motion == main ? setup : setup.withoutSteps());
             if (effect != null) effects.add(effect);
         }
-        if (moving.size() == 1) {
-            Effect effect = moving.getFirst().effect(anchor, when, look, setup);
+        Moves moves = moves(main, setup, look);
+        if (moves.loops().size() == 1 && moves.single() != null) {
+            Effect effect = moves.single().effect(anchor, when, look, setup);
             if (effect != null) effects.add(effect);
-        } else if (moving.size() > 1) {
-            List<Keyframe> frames = combine(moving);
+        } else if (!moves.loops().isEmpty()) {
+            List<Keyframe> frames = moves.loops().size() == 1 ? moves.loops().getFirst() : combineLoops(moves.loops());
             int loop = Math.max(1, (int) Keyframe.duration(frames));
             Timing timing = new Timing(when, loop, 1.0F, 0, Map.of(), Timing.Where.EVERYWHERE).between(setup.from() / 100.0F, setup.until() / 100.0F);
             Target target = new Target(Optional.of(anchor), Optional.empty(), Map.of(), Vec3.ZERO);
-            effects.add(new Effect.BlockMove(timing, target, Optional.empty(), directionOf(moving), false, Map.of(), frames, true));
+            effects.add(new Effect.BlockMove(timing, target, Optional.empty(), moves.direction(), false, Map.of(), frames, true));
         }
         return effects;
+    }
+
+    /**
+     * The moves a block plays together: the loops of its moving motions (not a piston's strike, played as a piston)
+     * and of its mods' motions, the way they go, and the motion itself when it's one of this mod's alone.
+     */
+    public record Moves(List<List<Keyframe>> loops, String direction, @org.jspecify.annotations.Nullable Motion single) {}
+
+    public static Moves moves(Motion main, MotionSetup setup, BlockState look) {
+        List<List<Keyframe>> loops = new java.util.ArrayList<>();
+        String direction = "up";
+        Motion single = null;
+        for (Motion motion : setup.all(main)) {
+            if (!motion.moves() || (motion == STRIKE && isPiston(look))) continue;
+            loops.add(motion.keyframes);
+            if (motion.direction.equals("facing")) direction = "facing";
+            single = motion;
+        }
+        for (net.minecraft.resources.Identifier id : setup.mods()) {
+            StudioMotions.Custom custom = StudioMotions.get(id);
+            if (custom == null || !custom.fits().test(look)) continue;
+            loops.add(custom.keyframes());
+            if (!custom.direction().equals("up")) direction = custom.direction();
+            single = null;
+        }
+        return new Moves(loops, direction, loops.size() == 1 ? single : null);
     }
 
     /** The way moves played together go: along the block's facing if one of them strikes, else up. */
@@ -249,9 +274,16 @@ public enum Motion implements StringRepresentable {
      * multiplied, their pushes (a strike) added. The loop lasts until they all meet again (at most 12 seconds).
      */
     public static List<Keyframe> combine(List<Motion> moving) {
+        List<List<Keyframe>> loops = new java.util.ArrayList<>();
+        for (Motion motion : moving) loops.add(motion.keyframes);
+        return combineLoops(loops);
+    }
+
+    /** Loops of keyframes played together, as one (see {@link #combine}). */
+    public static List<Keyframe> combineLoops(List<List<Keyframe>> moving) {
         int loop = 1;
-        for (Motion motion : moving) {
-            int length = Math.max(1, Math.round(Keyframe.duration(motion.keyframes)));
+        for (List<Keyframe> frames : moving) {
+            int length = Math.max(1, Math.round(Keyframe.duration(frames)));
             int together = loop / gcd(loop, length) * length;
             loop = together > 240 ? Math.max(loop, length) : together;
         }
@@ -262,13 +294,13 @@ public enum Motion implements StringRepresentable {
         return List.copyOf(frames);
     }
 
-    private static Keyframe sample(List<Motion> moving, int t) {
+    private static Keyframe sample(List<List<Keyframe>> moving, int t) {
         float move = 0, scale = 1;
         Vec3 offset = Vec3.ZERO, rotation = Vec3.ZERO;
         Map<String, String> state = new java.util.LinkedHashMap<>();
-        for (Motion motion : moving) {
-            float length = Math.max(1, Math.round(Keyframe.duration(motion.keyframes)));
-            Keyframe at = Keyframe.at(motion.keyframes, t % length == 0 && t > 0 ? length : t % length);
+        for (List<Keyframe> frames : moving) {
+            float length = Math.max(1, Math.round(Keyframe.duration(frames)));
+            Keyframe at = Keyframe.at(frames, t % length == 0 && t > 0 ? length : t % length);
             move += at.move();
             offset = offset.add(at.offset());
             rotation = rotation.add(at.rotation());

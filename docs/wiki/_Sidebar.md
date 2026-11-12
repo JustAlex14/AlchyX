@@ -17,6 +17,7 @@
 - [Guide Books](Guide-Books)
 - [Advanced Machines](Advanced-Machines)
 - [KubeJS Machines](KubeJS-Machines)
+- [Addon API](Addon-API)
 
 **More**
 

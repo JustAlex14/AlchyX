@@ -174,3 +174,5 @@ core.changeMotion(pos, false);                  // next allowed motion for that 
 `pattern()` returns the recorded shape once there is one, so everything built on it (checks, parts, previews, the Structure Builder) follows the player's build. `filePattern()` is always the file.
 
 Motions only work on parts (`formed: same`), since the block itself is hidden while its moving copy is drawn. They are played by the same engine as animation files, as `block_move` effects with `"hide": true`.
+
+Other mods can add their own motions to the studio and make their blocks animate inside machines: see [Addon API](Addon-API).

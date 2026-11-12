@@ -131,7 +131,7 @@ public class ChamberShellBlockEntity extends BlockEntity {
      * turns), only to be drawn: it is in no level's list, so it does nothing else. Null if there's none to draw.
      */
     public @Nullable BlockEntity puppet() {
-        if (data == null || level == null || !level.isClientSide() || hidden || clientHidden || puppetFailed) return null;
+        if (!drawsPuppet() || level == null || !level.isClientSide() || hidden || clientHidden || puppetFailed) return null;
         BlockState look = clientLook != null ? clientLook : disguise;
         if (puppet != null && puppet.getBlockState().getBlock() != look.getBlock()) puppet = null;
         try {
@@ -143,8 +143,8 @@ public class ChamberShellBlockEntity extends BlockEntity {
                     return null;
                 }
                 made.setLevel(level);
-                made.loadCustomOnly(net.minecraft.world.level.storage.TagValueInput.create(net.minecraft.util.ProblemReporter.DISCARDING,
-                        level.registryAccess(), data));
+                if (data != null) made.loadCustomOnly(net.minecraft.world.level.storage.TagValueInput.create(
+                        net.minecraft.util.ProblemReporter.DISCARDING, level.registryAccess(), data));
                 puppet = made;
             }
             if (puppet.getBlockState() != look) puppet.setBlockState(look);
@@ -161,9 +161,40 @@ public class ChamberShellBlockEntity extends BlockEntity {
 
     @SuppressWarnings("unchecked")
     private <T extends BlockEntity> void tickPuppet(BlockEntity entity, BlockState look) {
+        if (com.lealex.alchyx.animation.PartAnimators.animates(look)) { // a mod plays the block's own animation (a turning shaft...)
+            MultiblockCoreBlockEntity core = machine();
+            long now = level.getGameTime();
+            com.lealex.alchyx.animation.PartAnimators.animate(entity, look, new com.lealex.alchyx.animation.PartAnimators.Machine(core,
+                    core != null && core.isAnimationWorking(), core == null ? 0 : core.getAnimationProgress(now), now));
+        }
         net.minecraft.world.level.block.entity.BlockEntityTicker<T> ticker =
                 look.getTicker(level, (net.minecraft.world.level.block.entity.BlockEntityType<T>) entity.getType());
         if (ticker != null) ticker.tick(level, worldPosition, look, (T) entity);
+    }
+
+    /** Whether the part draws its look's block entity: it keeps data for it, or a mod animates that block. */
+    public boolean drawsPuppet() {
+        return data != null || com.lealex.alchyx.animation.PartAnimators.animates(clientLook != null ? clientLook : disguise);
+    }
+
+    private java.lang.ref.@Nullable WeakReference<MultiblockCoreBlockEntity> machine;
+    private long machineChecked = Long.MIN_VALUE;
+
+    /** Client: the formed machine this part belongs to (looked up every 2 seconds), or null. */
+    private @Nullable MultiblockCoreBlockEntity machine() {
+        MultiblockCoreBlockEntity known = machine == null ? null : machine.get();
+        long now = level == null ? 0 : level.getGameTime();
+        if (known != null && !known.isRemoved() && now - machineChecked < 40) return known;
+        machineChecked = now;
+        known = null;
+        for (MultiblockCoreBlockEntity core : com.lealex.alchyx.animation.LoadedCores.snapshot()) {
+            if (core.getLevel() == level && core.isFormed() && core.structureContains(worldPosition)) {
+                known = core;
+                break;
+            }
+        }
+        machine = known == null ? null : new java.lang.ref.WeakReference<>(known);
+        return known;
     }
 
     private net.minecraft.world.phys.@Nullable AABB renderBox;

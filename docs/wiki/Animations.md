@@ -240,3 +240,7 @@ Particles then spawn at the right spot with their spread and speed shrunk (their
 sounds play there, quieter the smaller the miniature. `Plays.PICTURE` leaves both out, `Plays.ALL` plays everything.
 The animation only advances while it is prepared, so a miniature nobody draws is still and silent.
 The blocks themselves are a `BlockBox` drawn through a `BoxMesh` (see the miniature kit).
+
+## Motions from other mods
+
+Addons can add studio motions (`"motion": "mod"` with `"setup": { "mods": [...] }`) and let blocks that animate themselves keep animating inside machines. See [Addon API](Addon-API).

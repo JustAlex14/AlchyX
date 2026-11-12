@@ -102,7 +102,7 @@ public class ChamberShellRenderer implements BlockEntityRenderer<ChamberShellBlo
     @Override
     public boolean shouldRender(ChamberShellBlockEntity shell, Vec3 cameraPosition) {
         BlockState disguise = shell.getDisguise();
-        return (shell.hasData() || disguise.getBlock() instanceof PistonBaseBlock && disguise.getValue(PistonBaseBlock.EXTENDED))
+        return (shell.drawsPuppet() || disguise.getBlock() instanceof PistonBaseBlock && disguise.getValue(PistonBaseBlock.EXTENDED))
                 && BlockEntityRenderer.super.shouldRender(shell, cameraPosition);
     }
 

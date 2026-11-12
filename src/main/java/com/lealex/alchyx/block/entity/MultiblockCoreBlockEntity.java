@@ -374,7 +374,7 @@ public abstract class MultiblockCoreBlockEntity extends BlockEntity {
      */
     public @Nullable MultiblockPattern pattern() {
         MultiblockPattern file = filePattern();
-        if (recordedShape != null && file != null && file.freeBuild().isPresent()) return recordedShape;
+        if (recordedShape != null && freeBuild() != null) return recordedShape;
         return file;
     }
 
@@ -391,10 +391,31 @@ public abstract class MultiblockCoreBlockEntity extends BlockEntity {
     // The shape recorded for this core (saved and synced), or null
     private @Nullable MultiblockPattern recordedShape;
 
-    /** The rules of a free-build machine (its file's "free_build"), or null for a machine with a fixed shape. */
+    /**
+     * The rules of a free-build machine (its file's "free_build"), or null for a machine with a fixed shape. A machine
+     * with a fixed shape that was completed once on this core ({@link #freeBuildUnlocked}) is free too: its player
+     * may record any build around the core instead ({@link com.lealex.alchyx.multiblock.FreeBuild#STUDIO}); until
+     * then, and after its shape is forgotten, it keeps its fixed shape.
+     */
     public com.lealex.alchyx.multiblock.@Nullable FreeBuild freeBuild() {
         MultiblockPattern file = filePattern();
-        return file == null ? null : file.freeBuild().orElse(null);
+        if (file == null) return null;
+        if (file.freeBuild().isPresent()) return file.freeBuild().get();
+        return unlocked && studioEditable() && !getBlockState().is(STUDIO_LOCKED) ? com.lealex.alchyx.multiblock.FreeBuild.STUDIO : null;
+    }
+
+    /** Whether the machine's file makes it a free build (no fixed shape at all). */
+    public boolean freeBuildOnly() {
+        MultiblockPattern file = filePattern();
+        return file != null && file.freeBuild().isPresent();
+    }
+
+    // Whether this core's machine (with a fixed shape) was completed once: from then on its player may build it freely
+    private boolean unlocked;
+
+    /** Whether this core's machine was completed once, so its player may now record a build of their own. */
+    public boolean freeBuildUnlocked() {
+        return unlocked;
     }
 
     /** The shape a player recorded for this core, or null. */
@@ -411,10 +432,21 @@ public abstract class MultiblockCoreBlockEntity extends BlockEntity {
         if (level == null || level.isClientSide()) return "the server records shapes";
         MultiblockPattern file = filePattern();
         com.lealex.alchyx.multiblock.FreeBuild rules = file == null ? null : file.freeBuild().orElse(null);
-        if (file == null || rules == null) return "this machine has a fixed shape, it can't be recorded";
-        if (formed || forming) return "it already stands: sneak and use the Recorder on the core to forget its shape first";
+        if (file == null) return "this machine has a fixed shape, it can't be recorded";
+        if (rules == null) rules = freeBuild();
+        if (rules == null) return "this machine has a fixed shape: complete it once first, then you can build it your own way";
+        if (formed || forming) return recordedShape == null
+                ? "it already stands: take one of its blocks out first, then record your own build"
+                : "it already stands: sneak and use the Recorder on the core to forget its shape first";
         String problem = rules.check(level, worldPosition, a, b);
         if (problem != null) return problem;
+        if (!motions.isEmpty() || !marks.isEmpty() || hideFileAnimation) { // (made for the old layout)
+            motions.clear();
+            setups.clear();
+            marks.clear();
+            hideFileAnimation = false;
+            motionsVersion++;
+        }
         setRecordedShape(rules.record(level, worldPosition, a, b, file.coreBlock()));
         return null;
     }
@@ -460,7 +492,7 @@ public abstract class MultiblockCoreBlockEntity extends BlockEntity {
 
     /** Whether the studio can show this machine now: formed, studio allowed, and a free build with its shape recorded. */
     public boolean studioOpens() {
-        return formed && studioRules() != null && (freeBuild() == null || recordedShape != null);
+        return formed && studioRules() != null && (!freeBuildOnly() || recordedShape != null);
     }
 
     /** The machine's blocks as the studio shows them, by offset from the core as they stand in the world (not turned). */
@@ -606,7 +638,7 @@ public abstract class MultiblockCoreBlockEntity extends BlockEntity {
             keptMarks.add(new com.lealex.alchyx.animation.StudioMark(at.immutable(), mark.kind(), mark.what(), Math.floorMod(mark.yaw(), 360),
                     mark.to().map(BlockPos::immutable), mark.times(), mark.items(), mark.shows()).cleaned());
         }
-        boolean hide = hideFile && freeBuild() == null; // (a free build's file is its own: nothing to turn off)
+        boolean hide = hideFile && recordedShape == null; // (a free build's file is its own: nothing to turn off)
         if (!kept.equals(motions) || !keptSetups.equals(setups) || !keptMarks.equals(marks) || hide != hideFileAnimation) {
             hideFileAnimation = hide;
             motions.clear();
@@ -806,6 +838,7 @@ public abstract class MultiblockCoreBlockEntity extends BlockEntity {
     public CompoundTag keptState() {
         CompoundTag tag = new CompoundTag();
         keepOnItem(tag);
+        if (unlocked) tag.putBoolean("alchyx_unlocked", true); // the core remembers it was completed once
         if (upgrades != null && level != null) {
             int installed = 0;
             for (ItemStack stack : upgrades.handler().copyToList()) if (!stack.isEmpty()) installed++;
@@ -827,6 +860,7 @@ public abstract class MultiblockCoreBlockEntity extends BlockEntity {
         if (kept == null || level == null) return;
         CompoundTag tag = kept.copyTag();
         restoreFromItem(tag);
+        if (tag.getBooleanOr("alchyx_unlocked", false)) unlocked = true;
         if (upgrades != null && tag.contains("alchyx_upgrades")) {
             upgrades.load(net.minecraft.world.level.storage.TagValueInput.create(net.minecraft.util.ProblemReporter.DISCARDING,
                     level.registryAccess(), tag.getCompoundOrEmpty("alchyx_upgrades")));
@@ -981,6 +1015,7 @@ public abstract class MultiblockCoreBlockEntity extends BlockEntity {
 
         forming = false;
         formed = true;
+        if (recordedShape == null && !unlocked) unlocked = true; // completed once: its player may now build it freely
         formedAt = level.getGameTime();
         announced = formationSettleTicks() <= 0; // settling first (before onStructureChanged, which may look at it)
         setChanged();
@@ -1114,6 +1149,7 @@ public abstract class MultiblockCoreBlockEntity extends BlockEntity {
         }
         if (!marks.isEmpty()) output.store("alchyx_marks", com.lealex.alchyx.animation.StudioMark.CODEC.listOf(), List.copyOf(marks));
         if (hideFileAnimation) output.putBoolean("alchyx_hide_file", true);
+        if (unlocked) output.putBoolean("alchyx_unlocked", true);
     }
 
     private static final com.mojang.serialization.Codec<Map<String, Integer>> LEVELS_CODEC =
@@ -1155,6 +1191,7 @@ public abstract class MultiblockCoreBlockEntity extends BlockEntity {
         }));
         List<com.lealex.alchyx.animation.StudioMark> readMarks = input.read("alchyx_marks",
                 com.lealex.alchyx.animation.StudioMark.CODEC.listOf()).orElse(List.of());
+        unlocked = input.getBooleanOr("alchyx_unlocked", false);
         boolean readHide = input.getBooleanOr("alchyx_hide_file", false);
         if (!read.equals(motions) || !readSetups.equals(setups) || !readMarks.equals(marks) || readHide != hideFileAnimation) {
             hideFileAnimation = readHide;

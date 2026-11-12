@@ -135,7 +135,7 @@ public class StudioScreen extends Screen {
         this.corePos = core.getBlockPos().immutable();
         this.shape = core.recordedShape() != null ? core.recordedShape() : core.pattern();
         this.rules = java.util.Objects.requireNonNull(core.studioRules());
-        this.fixed = core.freeBuild() == null;
+        this.fixed = core.recordedShape() == null;
         this.hideFile = this.savedHideFile = core.hidesFileAnimation();
         BlockPos[] box = core.studioBox();
         this.min = box[0];

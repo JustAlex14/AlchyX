@@ -102,7 +102,9 @@ public class StructureRecorderItem extends Item implements MachineTool {
     private static void useOnCore(Level level, Player player, ItemStack stack, MultiblockCoreBlockEntity core) {
         FreeBuild rules = core.freeBuild();
         if (rules == null) {
-            tell(player, "This machine has a fixed shape: build it as its book shows");
+            tell(player, core.studioEditable() && !core.getBlockState().is(MultiblockCoreBlockEntity.STUDIO_LOCKED)
+                    ? "Complete this machine once as its book shows: then you can build it your own way"
+                    : "This machine has a fixed shape: build it as its book shows");
             return;
         }
         if (!level.mayInteract(player, core.getBlockPos())) {

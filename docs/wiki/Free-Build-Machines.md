@@ -110,6 +110,16 @@ The shape is the player's, so the machine's strength should come from what you r
 
 Every block in the box is recorded exactly, turned the way it stands (facing, axis, slab type, upper or lower half). State that changes by itself, like a crop's age or a stair's corner shape, is not checked. Air is recorded as "anything": a torch placed later never breaks the machine.
 
+### Any machine, your own way (after building it once)
+
+A machine with a fixed shape (AlchyMastery's, a KubeJS machine...) unlocks free building once its player has completed it one time: from then on, that core may stand in any build. To change it:
+
+1. Take one block of the standing machine out (it breaks, its parts turn back into their blocks).
+2. Build whatever you want around the core (any blocks, up to 7 x 7 x 7), mark two opposite corners with the Structure Recorder, then use the Recorder on the core: the shape is recorded and the machine forms from it, working as before.
+3. **Sneak + use the Recorder on the core** forgets that shape: the machine needs its original shape again (it stays unlocked).
+
+The core remembers it was completed, also when it is broken and placed again. What was made in the studio for the old layout is cleared when a new shape is recorded. Machines kept out of the studio (`studioEditable()` false, or the `alchyx:studio_locked` tag) never unlock.
+
 ### The studio on any machine
 
 The Machine Studio also opens on machines with a fixed shape (AlchyMastery's, for example): use the Recorder on a formed machine's core with no corners marked. Everything above works the same, on the blocks the machine is made of. Two more buttons at the bottom:
@@ -146,7 +156,8 @@ Animation files work on free-build machines too. Block selectors (`"targets": {"
 ```java
 FreeBuild rules = core.freeBuild();             // null for a fixed-shape machine
 FreeBuild studio = core.studioRules();          // what the studio allows here (fixed shape: FreeBuild.STUDIO), or null
-core.studioEditable();                          // override: false keeps the studio off this machine
+core.studioEditable();                          // override: false keeps the studio and free building off this machine
+core.freeBuildUnlocked();                       // a fixed-shape machine completed once: freeBuild() is FreeBuild.STUDIO
 MultiblockPattern shape = core.recordedShape(); // null until a player records one
 String problem = core.recordShape(cornerA, cornerB); // null when recorded (server side)
 core.forgetShape();                             // also clears the motions

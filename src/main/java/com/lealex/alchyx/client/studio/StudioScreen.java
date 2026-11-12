@@ -155,7 +155,7 @@ public class StudioScreen extends Screen implements com.lealex.alchyx.client.ani
         BlockPos max = box[1];
         this.size = new BlockPos(max.getX() - min.getX() + 1, max.getY() - min.getY() + 1, max.getZ() - min.getZ() + 1);
         this.top = size.getY() - 1;
-        this.building = core.isFormed() ? core.freeBuild() : null;
+        this.building = core.freeBuild(); // (a free build that doesn't stand yet is built here from its core)
         if (building != null) this.tab = Tab.BUILD; // a machine players may build: the studio opens on its build
         ClientLevel level = Minecraft.getInstance().level;
         for (MultiblockPattern.LookCell cell : core.studioCells()) {
@@ -1508,6 +1508,8 @@ public class StudioScreen extends Screen implements com.lealex.alchyx.client.ani
         if (minecraft.level == null || !(minecraft.level.getBlockEntity(corePos) instanceof MultiblockCoreBlockEntity core)
                 || !MachineStudio.opens(core) || (core.recordedShape() != null ? core.recordedShape() : core.pattern()) != shape
                 || minecraft.player == null || minecraft.player.distanceToSqr(corePos.getCenter()) > 16 * 16) {
+            if (rebuilding && minecraft.level != null && minecraft.level.getBlockEntity(corePos) instanceof MultiblockCoreBlockEntity forming
+                    && forming.isForming()) return; // the new build forms: open again once it stands
             if (rebuilding && minecraft.level != null && minecraft.level.getBlockEntity(corePos) instanceof MultiblockCoreBlockEntity again
                     && MachineStudio.opens(again)) {
                 minecraft.setScreen(new StudioScreen(again, tab, yaw, pitch, zoom)); // the new build, to go on with it

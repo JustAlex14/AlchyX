@@ -44,7 +44,6 @@ public class AlchyXClient {
         // Growing machines' parts flying in, sinking away, rising out of the ground (client/growth/GrowthParts)
         com.lealex.alchyx.growth.GrowthPayload.clientReceive = com.lealex.alchyx.client.growth.GrowthParts::receive;
         net.neoforged.neoforge.common.NeoForge.EVENT_BUS.addListener(com.lealex.alchyx.client.growth.GrowthParts::onClientTick);
-        net.neoforged.neoforge.common.NeoForge.EVENT_BUS.addListener(com.lealex.alchyx.client.RecorderOutline::onClientTick);
         // The Machine Studio: a free-build machine in 3D, its motions picked and previewed (client/studio)
         com.lealex.alchyx.multiblock.MachineStudio.clientOpen = com.lealex.alchyx.client.studio.StudioScreen::open;
         net.neoforged.neoforge.common.NeoForge.EVENT_BUS.addListener(com.lealex.alchyx.client.growth.GrowthParts::onExtract);

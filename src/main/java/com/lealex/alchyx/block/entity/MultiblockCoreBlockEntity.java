@@ -481,7 +481,7 @@ public abstract class MultiblockCoreBlockEntity extends BlockEntity {
      */
     public String rebuild(Map<BlockPos, BlockState> added, java.util.Collection<BlockPos> removed) {
         if (level == null || level.isClientSide()) return "the server rebuilds machines";
-        if (!formed || forming) return "the machine must stand to be built in the studio";
+        if (forming) return "it's forming: wait a moment";
         com.lealex.alchyx.multiblock.FreeBuild rules = freeBuild();
         MultiblockPattern file = filePattern(), current = pattern();
         if (rules == null || file == null || current == null) return "this machine has a fixed shape: complete it once first";
@@ -610,9 +610,11 @@ public abstract class MultiblockCoreBlockEntity extends BlockEntity {
         return com.lealex.alchyx.multiblock.FreeBuild.STUDIO;
     }
 
-    /** Whether the studio can show this machine now: formed, studio allowed, and a free build with its shape recorded. */
+    /** Whether the studio can show this machine now: formed and studio allowed (a free build with its shape recorded), or a machine built in the studio that doesn't stand yet. */
     public boolean studioOpens() {
-        return formed && studioRules() != null && (!freeBuildOnly() || recordedShape != null);
+        if (studioRules() == null) return false;
+        if (formed) return !freeBuildOnly() || recordedShape != null;
+        return !forming && freeBuild() != null; // (a machine built in the studio: from its core alone, or what's left of it)
     }
 
     /** The machine's blocks as the studio shows them, by offset from the core as they stand in the world (not turned). */
@@ -1120,7 +1122,7 @@ public abstract class MultiblockCoreBlockEntity extends BlockEntity {
         }
         if (recordedShape == null && pattern.freeBuild().isPresent()) {
             // A free-build machine is nothing until a player records its shape (its file's grid is the core alone)
-            structureProblem = "no shape yet: build it, mark the build with a Structure Recorder, then use the Recorder on the core";
+            structureProblem = "no shape yet: open the Machine Studio on the core (Structure Recorder, or sneak + right-click) and build it there";
         } else {
             structureProblem = pattern.findProblem(level, worldPosition, rotation());
         }

@@ -1,20 +1,18 @@
 # Free-Build Machines
 
-A free-build machine has no fixed shape. Each player builds it the way they like, inside a box and within a few rules, then records the build with a **Structure Recorder**. That shape is saved on that one machine: two players' machines of the same kind can look completely different.
+A free-build machine has no fixed shape. Each player builds it the way they like, within a few rules, right in the **Machine Studio**. That shape is saved on that one machine: two players' machines of the same kind can look completely different.
 
 ## For players
 
 1. Place the machine's core.
-2. Build around it. Use the Recorder on the core with no corners marked to see the rules (how big, which blocks it needs).
-3. Use the Recorder on a block: the first corner of the box. Use it on the opposite block: the second corner. The box shows as lines of sparks while the Recorder is in hand.
-4. Use the Recorder on the core. If the build follows the rules, it is recorded and the machine forms. If not, chat says what is wrong: the box is too big, a block is not allowed, or some required blocks are missing.
+2. Use the **Structure Recorder** on it (or sneak and right-click it with an empty hand): the Machine Studio opens on the **Build** tab, and chat shows the rules (how big, which blocks it needs).
+3. Build the machine there, block by block (see the Build tab below), then press **Save**. If the build follows the rules, it is recorded and the machine forms. If not, the studio says what is wrong: the build is too big, a block is not allowed, or some required blocks are missing.
 
-After that the machine works like any other: break a block of it and it unforms, put it back and it forms again. The parts look exactly like the blocks you placed, and when the machine breaks they turn back into those blocks (nothing is lost). Blocks put in later from the studio's **Build** tab are the exception: they are made from nothing, so they go with the machine when it breaks.
+After that the machine works like any other. Blocks put in from the studio are made from nothing, so they go with the machine when it breaks. To change the shape later, open the studio again and build: **Save** keeps the machine standing.
 
 ### More with the Recorder
 
-- **Sneak + use the Recorder on the core**: forget its shape, to rebuild it differently. A formed machine breaks first.
-- **Sneak + use the Recorder in the air**: forget the corners.
+- The Recorder only opens the studio: use it on the core or on any block of a formed machine. If the studio can't open there (a machine kept out of it, a fixed machine not completed yet), chat says why.
 - Chests, barrels and other blocks that hold things (items, fluid or energy, modded ones too) stay real blocks, so they keep what is in them. So do liquids. Other blocks with data (a spawner, a banner, a sign, a head...) become parts that keep their data and show it: a spawner shows its mob turning (but spawns nothing), and gets its data back as it was when the machine breaks. Change what they show with **Data...** in the studio.
 - A piston in the machine is never an opaque part, so the blocks around it don't show holes when it strikes.
 - The Structure Builder rebuilds a free-build machine's recorded shape, like any other machine.
@@ -23,7 +21,7 @@ The Recorder's recipe: a stick, a compass, two gold ingots and an amethyst shard
 
 ### Making blocks move
 
-The quick way, in the world (the Machine Studio below does all of this and much more): once the machine stands, use the Recorder on any of its blocks to make that block move while the machine works. Each use picks the next motion, then back to still:
+In the Machine Studio's **Blocks** tab (below), choose blocks of the machine and pick a motion for them. The motions:
 
 | Motion | What the block does |
 |---|---|
@@ -42,11 +40,11 @@ The quick way, in the world (the Machine Studio below does all of this and much 
 
 A piston given **strike** pushes its head out and back like a real piston. The last three only work on blocks that can do it.
 
-Sneak + use on a block stops it at once. Some machines allow only some motions, or none.
+Some machines allow only some motions, or none.
 
 ### The Machine Studio
 
-Once the machine stands, **sneak and right-click its core with an empty hand** (or use the Recorder on the core with no corners marked): the Machine Studio opens. A plain right-click still opens the machine's own screen. It shows the machine in 3D, like a page of a guide book, but you can change it:
+Once the machine stands, **sneak and right-click its core with an empty hand** (or use the Recorder on it): the Machine Studio opens. A plain right-click still opens the machine's own screen. It shows the machine in 3D, like a page of a guide book, but you can change it:
 
 - **Drag** to turn the view, use the **wheel** to zoom, and use the **- / +** layer buttons to hide the top layers and look inside.
 - **Build** tab (where the studio opens on a machine you may build: a free-build machine, or one with a fixed shape completed once): build the machine right in the studio, like in the world. **Click a side** of a block to put a block there, **right click** a block to take it out, **middle click** a block to put in that kind next. **Block...** picks the block to put in: any block, modded ones too, with a search bar; it's free (no need to have it), and blocks that turn (pistons, logs, observers...) face the side you clicked. The build can grow in any direction up to the machine's size limit (32 x 32 x 32 once a fixed machine is unlocked); a spot where something stands in the world (a tree, another block) can't take a block. Nothing changes until **Save**: then the machine stays standing and every block put in becomes one of its parts at once (a chest or a liquid stays a real block), every block taken out is gone (a chest's contents drop), and the studio opens again on the new build. **Undo the build** puts everything back as it stands. Blocks put in this way are made from nothing, so when the machine breaks they go with it: only the blocks it was built from in the world come back.
@@ -114,7 +112,7 @@ The shape is the player's, so the machine's strength should come from what you r
 
 ### What gets recorded
 
-Every block in the box is recorded exactly, turned the way it stands (facing, axis, slab type, upper or lower half). State that changes by itself, like a crop's age or a stair's corner shape, is not checked. Air is recorded as "anything": a torch placed later never breaks the machine.
+Every block of the build is recorded exactly, turned the way it stands (facing, axis, slab type, upper or lower half). State that changes by itself, like a crop's age or a stair's corner shape, is not checked. Air is recorded as "anything": a torch placed later never breaks the machine.
 
 ### Any machine, your own way (after building it once)
 
@@ -122,17 +120,13 @@ A machine with a fixed shape (AlchyMastery's, a KubeJS machine...) unlocks free 
 
 The easy way: open the Machine Studio on the standing machine (the Structure Recorder on its core, or sneak + right-click it with an empty hand). It opens on the **Build** tab, showing the machine as designed: put blocks in and take them out there, then **Save** (see the Build tab above). The machine never breaks while you do.
 
-Or in the world:
-
-1. Take one block of the standing machine out (it breaks, its parts turn back into their blocks).
-2. Build whatever you want around the core (any blocks, none required, up to 32 x 32 x 32: a whole factory), mark two opposite corners with the Structure Recorder, then use the Recorder on the core: the shape is recorded and the machine forms from it, working as before.
-3. **Sneak + use the Recorder on the core** forgets that shape: the machine needs its original shape again (it stays unlocked).
+Any blocks go, none required, up to 32 x 32 x 32: a whole factory.
 
 The core remembers it was completed, also when it is broken and placed again. What was made in the studio for the old layout is cleared when a new shape is recorded. Machines kept out of the studio (`studioEditable()` false, or the `alchyx:studio_locked` tag) never unlock.
 
 ### The studio on any machine
 
-The Machine Studio also opens on machines with a fixed shape (AlchyMastery's, for example): sneak and right-click a formed machine's core with an empty hand, or use the Recorder on it with no corners marked. Everything above works the same, on the blocks the machine is made of. Two more buttons at the bottom:
+The Machine Studio also opens on machines with a fixed shape (AlchyMastery's, for example): sneak and right-click a formed machine's core with an empty hand, or use the Recorder on it. Everything above works the same, on the blocks the machine is made of. Two more buttons at the bottom:
 
 - **Own anim: on / off**: the machine's own animation (its mod's files) keeps playing along with what you make (on), or stops so only yours plays (off). **Save** keeps it.
 - **Export**: opens a window to name the file (it starts as `<machine>_studio`), then writes what you made (saved or not) as an animation file in the game folder, `alchyx_exports/<mod>/machine_animation/<name>.json`. **Open folder** shows it. Put it in a datapack at `data/<mod>/machine_animation/` and every machine of that kind plays it. With the own animation off, the file says `"replace": true` and replaces the mod's.
@@ -169,7 +163,7 @@ FreeBuild studio = core.studioRules();          // what the studio allows here (
 core.studioEditable();                          // override: false keeps the studio and free building off this machine
 core.freeBuildUnlocked();                       // a fixed-shape machine completed once: freeBuild() is FreeBuild.STUDIO
 MultiblockPattern shape = core.recordedShape(); // null until a player records one
-String problem = core.recordShape(cornerA, cornerB); // null when recorded (server side)
+String problem = core.recordShape(cornerA, cornerB); // null when recorded (server side; the studio's Save does this)
 core.forgetShape();                             // also clears the motions
 core.motions();                                 // offset from the core -> Motion
 core.changeMotion(pos, false);                  // next allowed motion for that part (true: none)

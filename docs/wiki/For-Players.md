@@ -31,7 +31,7 @@ The Structure Builder (in the AlchyX creative tab) builds a machine for you when
 
 ## Machines you shape yourself
 
-Some machines have no fixed shape: you build them your own way and record the build with a Structure Recorder. See [Free-Build Machines](Free-Build-Machines).
+Some machines have no fixed shape: you build them your own way in the Machine Studio (use a Structure Recorder on the core). See [Free-Build Machines](Free-Build-Machines).
 
 ## The Machine Studio
 

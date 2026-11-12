@@ -220,8 +220,8 @@ machine cores appear in KubeJS's tab like any script block.
 
 ## 7. A machine players shape themselves (free build)
 
-A script machine can also have no fixed shape: each player builds it their own way and records it with the
-**Structure Recorder** (`alchyx:structure_recorder`). Only the pattern file changes; the core, recipes and
+A script machine can also have no fixed shape: each player builds it their own way in the Machine Studio (the
+**Structure Recorder**, `alchyx:structure_recorder`, opens it on the core). Only the pattern file changes; the core, recipes and
 animations work as above. Full reference: [Free-Build Machines](Free-Build-Machines).
 
 `kubejs/startup_scripts/machines.js`:
@@ -284,9 +284,9 @@ StartupEvents.registry('block', event => {
 }
 ```
 
-To test: place the core, build around it with at least a piston, 2 glass and 4 stone bricks (12 blocks or more,
-up to 7 wide and 5 high), use the Recorder on two opposite corners of the build, then on the core. Put cobblestone
-in the core: while it works, use the Recorder on blocks of the machine to make them spin, bob, strike, swing or shake.
+To test: place the core, build it with at least a piston, 2 glass and 4 stone bricks (12 blocks or more,
+up to 7 wide and 5 high) in the Machine Studio (use the Recorder on the core), then **Save**. Put cobblestone in
+the core: give blocks of the machine a motion in the studio's Blocks tab to make them spin, bob, strike, swing or shake.
 
 ## Before it's formed
 

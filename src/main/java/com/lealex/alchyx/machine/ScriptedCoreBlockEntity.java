@@ -102,7 +102,19 @@ public class ScriptedCoreBlockEntity extends MultiblockCoreBlockEntity implement
 
     /** Items: inputs first (players and pipes may insert), then outputs (filled by the machine). */
     public static ItemStacksResourceHandler createItems(MachineSpec spec, Runnable onChanged) {
-        return new ItemStacksResourceHandler(Math.max(1, spec.itemSlots())) {
+        int size = Math.max(1, spec.itemSlots());
+        return new ItemStacksResourceHandler(size) {
+            @Override
+            public void deserialize(net.minecraft.world.level.storage.ValueInput input) {
+                super.deserialize(input);
+                // Saved with another number of slots (the script changed its slots): keep this many, what fits stays
+                if (stacks.size() != size) {
+                    net.minecraft.core.NonNullList<ItemStack> fixed = net.minecraft.core.NonNullList.withSize(size, ItemStack.EMPTY);
+                    for (int i = 0; i < Math.min(size, stacks.size()); i++) fixed.set(i, stacks.get(i));
+                    setStacks(fixed);
+                }
+            }
+
             @Override
             public boolean isValid(int index, ItemResource resource) {
                 return index < spec.itemInputs();
@@ -117,7 +129,19 @@ public class ScriptedCoreBlockEntity extends MultiblockCoreBlockEntity implement
 
     /** Tanks: inputs first, then outputs. */
     public static FluidStacksResourceHandler createTanks(MachineSpec spec, Runnable onChanged) {
-        return new FluidStacksResourceHandler(Math.max(1, spec.tanks()), spec.tankCapacity()) {
+        int size = Math.max(1, spec.tanks());
+        return new FluidStacksResourceHandler(size, spec.tankCapacity()) {
+            @Override
+            public void deserialize(net.minecraft.world.level.storage.ValueInput input) {
+                super.deserialize(input);
+                if (stacks.size() != size) { // (saved with another number of tanks)
+                    net.minecraft.core.NonNullList<net.neoforged.neoforge.fluids.FluidStack> fixed =
+                            net.minecraft.core.NonNullList.withSize(size, net.neoforged.neoforge.fluids.FluidStack.EMPTY);
+                    for (int i = 0; i < Math.min(size, stacks.size()); i++) fixed.set(i, stacks.get(i));
+                    setStacks(fixed);
+                }
+            }
+
             @Override
             public boolean isValid(int index, FluidResource resource) {
                 return index < spec.fluidInputs();

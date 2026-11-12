@@ -52,6 +52,13 @@ Your menu must implement `CoreMenu` and return the core's position on the client
 - An item effect needs `setAnimationDisplay(name, stack)` with the same name.
 - Run `/reload` after editing, or rejoin.
 
+## A mini structure does not show
+
+- The log lists the mini files it loaded (`AlchyX: loaded N mini structure(s)`). A broken file is logged and skipped.
+- A mini file needs blocks: `blocks`, or a `structure` that names a multiblock that loaded.
+- The studio keeps a "mini" anchor only if its id is a mini file or a multiblock the server knows, or one of the machine's own minis.
+- A mini that stands still while the machine works has no animation: a multiblock with no animation file, or a mini built in the studio with no motions.
+
 ## Asking for help
 
 Open an issue on the [AlchyX repository](https://github.com/JustAlex14/AlchyX/issues) with the log lines around `AlchyX: loaded`, your pattern file, and what the action bar says when you right-click the core.

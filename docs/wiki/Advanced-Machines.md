@@ -123,7 +123,9 @@ A furnace normally loses the mark. A mixin asks `RiftMark.cooked(input, result)`
 
 `miniature/BlockBox`, `client/miniature/BoxMesh`, `client/miniature/Miniatures` and `client/animation/MiniatureAnimation` (used by AlchyMastery's nexuses and AlchyRift's looking-in view).
 
-A `BlockBox` is a box of blocks to show in small, captured from the world on the server (`BlockBox.capture`) or built from a list (`BlockBox.of`), sent in a compact form and drawn on the client through a `BoxMesh`. `MiniatureAnimation` plays a machine's own animation file inside a miniature, so you do not write a second animation. See the end of [Animations](Animations).
+A `BlockBox` is a box of blocks to show in small, captured from the world on the server (`BlockBox.capture`) or built from a list (`BlockBox.of`), sent in a compact form and drawn on the client through a `BoxMesh`. `MiniatureAnimation` plays a machine's own animation file inside a miniature, so you do not write a second animation; `setSpeed(n)` plays it n times as fast. See the end of [Animations](Animations).
+
+For a small machine inside a bigger one there is a ready-made path: mini structures (`animation/MiniStructure`, drawn by `client/animation/MiniFigure`). Any multiblock, a `machine_mini` file or a mini built in the studio shows as a figure (`"figure": "<id>"`), timed on the machine it stands in. See [Animations](Animations#mini-structures) and [Addon API](Addon-API).
 
 ## Coded figures
 

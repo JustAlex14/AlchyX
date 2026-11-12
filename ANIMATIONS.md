@@ -238,3 +238,56 @@ Particles then spawn at the right spot with their spread and speed shrunk (their
 sounds play there, quieter the smaller the miniature. `Plays.PICTURE` leaves both out, `Plays.ALL` plays everything.
 The animation only advances while it is prepared, so a miniature nobody draws is still and silent.
 The blocks themselves are a `BlockBox` drawn through a `BoxMesh` (see the miniature kit).
+
+## Mini structures
+
+A mini structure is a small machine shown inside a bigger one, playing its own animation: a tiny coop on a hatchery's
+roof, a model of what a factory makes. Show one with a `figure` effect whose `"figure"` is the mini's id, sized with
+`"scale"` (one mini block, in blocks):
+
+```json
+{"type": "figure", "figure": "mypack:tiny_coop", "at": "roof", "yaw": 90, "scale": 0.25}
+```
+
+The id can be:
+
+- **any multiblock** (`"figure": "mypack:egg_hatchery"`): its formed look and its own animation file, nothing to write;
+- **a mini file**, `data/<namespace>/machine_mini/<name>.json` (below);
+- **a mini built in the Machine Studio**: the machine keeps it, and an anchor shows it (see
+  [Free-Build Machines](https://github.com/JustAlex14/AlchyX/wiki/Free-Build-Machines)).
+
+A mini file:
+
+```json
+{
+  "name": "Tiny coop",
+  "structure": "mypack:egg_hatchery",
+  "blocks": [{"at": [0, 0, 0], "block": "minecraft:hay_block"}, {"at": [0, 1, 0], "block": "minecraft:smoker", "state": {"lit": true}}],
+  "animation": "mypack:egg_hatchery",
+  "anchors": {"nest": [0, 0, 0]},
+  "effects": [{"type": "block_move", "when": "working", "interval": 40, "targets": "nest", "direction": "up", "hide": true,
+               "keyframes": [{"t": 0, "move": 0}, {"t": 20, "move": 0.15}, {"t": 40, "move": 0}]}],
+  "length": 40,
+  "size": 0.25
+}
+```
+
+Every field is optional:
+
+- `structure`: take a multiblock's formed look (when there are no `blocks`) and its animation (when there are no `effects`);
+- `blocks`: blocks of its own, by offset from its core cell;
+- `animation`: play this machine's animation file instead;
+- `anchors` and `effects`: an animation of its own, written like an animation file's;
+- `length`: how many ticks of its animation one operation of the parent plays (default 40);
+- `size`: its default size in the studio.
+
+**Timing.** A mini is timed on the machine it stands in. While the machine works, one of its operations plays
+`length` ticks of the mini's animation, so a recipe that goes faster (a speed upgrade, `setSpeed` in a script) plays
+the mini faster, even mid-operation (`retimeAnimationOperation` in the core). Its `start` and `finish` effects fire
+with the machine's, and its progress-based effects (block states, `between`) follow the machine's progress. While the
+machine rests, its idle effects play at the usual pace. Its particles and sounds come out where it stands, smaller and
+quieter.
+
+## Motions from other mods
+
+Addons can add studio motions (`"motion": "mod"` with `"setup": { "mods": [...] }`) and let blocks that animate themselves keep animating inside machines. See [Addon API](https://github.com/JustAlex14/AlchyX/wiki/Addon-API).

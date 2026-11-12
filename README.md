@@ -5,6 +5,9 @@ A library mod for NeoForge (Minecraft 26.1.2) that lets mods and datapacks defin
 - Structure patterns with detection, a forming wave and disguised shell blocks
 - Free-build machines: players build their own shape and record it with a Structure Recorder (see the wiki's Free-Build Machines page)
 - Machine animations defined in datapack files (see [ANIMATIONS.md](ANIMATIONS.md))
+- The Machine Studio: players animate a formed machine in a 3D screen (motions, block shapes, floating items, mobs, particles, sounds), build onto it, and export the result as a datapack file
+- Mini structures: a small machine shown inside a bigger one (any multiblock, a `machine_mini` file, or one built in the studio), its animation timed on the parent's recipe
+- An addon API: other mods add studio motions and keep their blocks' own animations inside machines (see the wiki's Addon API page)
 - KubeJS support (see [KUBEJS.md](KUBEJS.md))
 - Patchouli integration: every pattern becomes a book multiblock, with fitted previews, and book chapters can unlock when another chapter is read. Book paper can change chapter by chapter, with marks on some pages
 - Upgrades: upgrade kinds with tiers, slots, emblems and the corruption rifts they open on a machine

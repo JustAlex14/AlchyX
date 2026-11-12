@@ -71,10 +71,13 @@ These feed the animation files (see [Animations](Animations)). Each one syncs to
 | `setAnimationWorking(boolean)` | `"when": "working"` and `"idle"` |
 | `startAnimationOperation(int ticks)` | `"when": "start"`, and the progress used by `converge` items and `block_state` steps |
 | `finishAnimationOperation()` | `"when": "finish"` |
+| `retimeAnimationOperation(int ticks)` | the operation under way now lasts this long in all (a speed upgrade went in or out): it keeps how far it is, and the rest plays at the new pace, mini structures included |
 | `setAnimationDisplay(String name, ItemStack)` | `"display": "<name>"` on item effects and item particles. Empty clears it |
 | `setAnimationLevel(String name, int value)` | `"min_level": {"<name>": n}`. Saved and synced. 0 removes it |
 
-Readers: `isAnimationWorking()`, `getAnimationProgress(gameTime)`, `getAnimationDisplay(name)`, `getAnimationLevel(name)`.
+Readers: `isAnimationWorking()`, `getAnimationProgress(gameTime)`, `getAnimationOperationTicks()`, `getAnimationDisplay(name)`, `getAnimationLevel(name)`.
+
+Pass the operation's real length to `startAnimationOperation`, speed upgrades included: mini structures standing in the machine play one loop per operation, so they speed up with it. `ownMinis()` lists the minis players built for this machine in the studio.
 
 ## State
 

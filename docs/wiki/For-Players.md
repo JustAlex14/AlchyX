@@ -33,6 +33,10 @@ The Structure Builder (in the AlchyX creative tab) builds a machine for you when
 
 Some machines have no fixed shape: you build them your own way and record the build with a Structure Recorder. See [Free-Build Machines](Free-Build-Machines).
 
+## The Machine Studio
+
+Sneak and right-click a formed machine's core with an empty hand (if the machine allows it): a 3D view of the machine opens. There you can make its blocks move (spin, bob, strike, light up, fill...), reshape them for the look, add floating items, mobs, particles, sounds and small mini machines, and, on machines you shape yourself, add and remove blocks. **Save** keeps it on that machine. See [Free-Build Machines](Free-Build-Machines) for every button.
+
 ## Upgrades and corruption
 
 Some machines take upgrades. They go in a tab on the right side of the machine's screen, one slot per kind. Pushing a machine with upgrades corrupts it: veins in the colours of the installed upgrades creep over the structure, and some machines start to glitch. Breaking a core keeps its upgrades on the dropped item.

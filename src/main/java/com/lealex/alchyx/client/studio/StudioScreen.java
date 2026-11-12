@@ -2,6 +2,7 @@ package com.lealex.alchyx.client.studio;
 
 import com.lealex.alchyx.AlchyX;
 import com.lealex.alchyx.animation.BlockLook;
+import com.lealex.alchyx.animation.Effect;
 import com.lealex.alchyx.animation.Keyframe;
 import com.lealex.alchyx.animation.Motion;
 import com.lealex.alchyx.animation.MotionSetup;
@@ -85,6 +86,10 @@ public class StudioScreen extends Screen {
     private final FreeBuild rules;
     private final boolean fixed;                             // a machine with a fixed shape (its own animation files play too)
     private boolean hideFile, savedHideFile;                 // its own animation turned off, so only the studio's plays
+    /** A block move of the machine's own animation file, on one of its cells (box coordinates): shown in the preview. */
+    private record FileMove(BlockPos cell, com.lealex.alchyx.client.animation.AnimationEngine.PreviewMove move) {}
+    private final List<FileMove> fileMoves = new ArrayList<>();
+    private final Set<BlockPos> fileMoved = new java.util.HashSet<>(); // cells a file's move swaps or hides: drawn apart
     private final BlockPos min, size;                        // the build's box: lowest offset from the core, and its size
     private final Map<BlockPos, BlockState> looks = new HashMap<>();     // what shows at each cell (box coordinates)
     private final Set<BlockPos> movable = new LinkedHashSet<>();        // cells that can be given a motion
@@ -146,6 +151,15 @@ public class StudioScreen extends Screen {
             if (cell.offset().equals(BlockPos.ZERO) || level == null) continue;
             if (ShellParts.isPart(level.getBlockState(corePos.offset(cell.offset())))) movable.add(at);
         }
+        com.lealex.alchyx.animation.ResolvedAnimation file = com.lealex.alchyx.animation.ClientAnimations.get(core.patternId());
+        if (file != null && level != null) {
+            for (var move : com.lealex.alchyx.client.animation.AnimationEngine.previewMoves(level, core, file)) {
+                BlockPos cell = move.pos().subtract(corePos).subtract(min);
+                if (!looks.containsKey(cell)) continue;
+                fileMoves.add(new FileMove(cell, move));
+                if (move.effect().hide() || !move.effect().swap().isEmpty()) fileMoved.add(cell);
+            }
+        }
         core.motions().forEach((offset, motion) -> saved.put(offset.subtract(min), motion));
         edits.putAll(saved);
         core.setups().forEach((offset, setup) -> savedSetups.put(offset.subtract(min), setup));
@@ -203,6 +217,7 @@ public class StudioScreen extends Screen {
             x += 68;
             Button own = addRenderableWidget(Button.builder(Component.literal(hideFile ? "Own anim: off" : "Own anim: on"), b -> {
                 hideFile = !hideFile;
+                stillDirty = true;
                 b.setMessage(Component.literal(hideFile ? "Own anim: off" : "Own anim: on"));
                 refreshButtons();
             }).bounds(x, y, 80, 20).build());
@@ -210,6 +225,9 @@ public class StudioScreen extends Screen {
             x += 84;
             Button export = addRenderableWidget(Button.builder(Component.literal("Export"), b -> export()).bounds(x, y, 50, 20).build());
             export.setTooltip(Tooltip.create(Component.literal("Write what you made here as an animation file for a datapack: every machine of this kind plays it")));
+            x += 54;
+            Button bring = addRenderableWidget(Button.builder(Component.literal("Import"), b -> importFile()).bounds(x, y, 50, 20).build());
+            bring.setTooltip(Tooltip.create(Component.literal("Bring back a file Export made (alchyx_exports), to change it here. Save to keep it")));
         }
         addRenderableWidget(Button.builder(Component.literal("Close"), b -> onClose()).bounds(width - MARGIN - 50, y, 50, 20).build());
 
@@ -737,8 +755,15 @@ public class StudioScreen extends Screen {
         try {
             com.google.gson.JsonElement json = com.lealex.alchyx.animation.MachineAnimation.CODEC
                     .encodeStart(com.mojang.serialization.JsonOps.INSTANCE, file).getOrThrow();
-            java.nio.file.Path path = minecraft.gameDirectory.toPath().resolve("alchyx_exports").resolve(machine.getNamespace())
-                    .resolve("machine_animation").resolve(machine.getPath() + "_studio.json");
+            // What was made here, for Import (in the pattern's own frame, like the anchors)
+            List<com.lealex.alchyx.animation.StudioSave.Moving> moving = new ArrayList<>();
+            motions.forEach((offset, motion) -> moving.add(new com.lealex.alchyx.animation.StudioSave.Moving(offset, motion,
+                    timings.getOrDefault(offset, MotionSetup.ALWAYS))));
+            com.lealex.alchyx.animation.StudioSave studio = new com.lealex.alchyx.animation.StudioSave(moving, sent, hideFile)
+                    .turned(MultiblockPattern.inverse(core.rotation()));
+            json.getAsJsonObject().add("alchyx_studio", com.lealex.alchyx.animation.StudioSave.CODEC
+                    .encodeStart(com.mojang.serialization.JsonOps.INSTANCE, studio).getOrThrow());
+            java.nio.file.Path path = exportPath(machine);
             java.nio.file.Files.createDirectories(path.getParent());
             java.nio.file.Files.writeString(path, new com.google.gson.GsonBuilder().setPrettyPrinting().create().toJson(json));
             message = "Exported to " + minecraft.gameDirectory.toPath().relativize(path).toString().replace('\\', '/')
@@ -746,6 +771,71 @@ public class StudioScreen extends Screen {
         } catch (Exception e) {
             AlchyX.LOGGER.warn("AlchyX: studio export failed", e);
             message = "Couldn't export: " + e.getMessage();
+        }
+        if (minecraft.player != null) minecraft.player.sendSystemMessage(Component.literal(message));
+    }
+
+    /** Where Export writes this machine's file, and Import reads it. */
+    private static java.nio.file.Path exportPath(Identifier machine) {
+        return Minecraft.getInstance().gameDirectory.toPath().resolve("alchyx_exports").resolve(machine.getNamespace())
+                .resolve("machine_animation").resolve(machine.getPath() + "_studio.json");
+    }
+
+    /**
+     * Brings an exported file back into the studio (its "alchyx_studio" part), in place of what's here: its motions,
+     * anchors and whether the machine's own animation is off. Nothing changes on the machine until Save.
+     */
+    private void importFile() {
+        Minecraft minecraft = Minecraft.getInstance();
+        if (minecraft.level == null || !(minecraft.level.getBlockEntity(corePos) instanceof MultiblockCoreBlockEntity core)) return;
+        java.nio.file.Path path = exportPath(core.patternId());
+        String relative = minecraft.gameDirectory.toPath().relativize(path).toString().replace('\\', '/');
+        String message;
+        try {
+            if (!java.nio.file.Files.exists(path)) {
+                message = "Nothing to import: no " + relative + " (Export makes it; put a file there to bring it in)";
+            } else {
+                com.google.gson.JsonElement json = com.google.gson.JsonParser.parseString(java.nio.file.Files.readString(path));
+                com.google.gson.JsonElement part = json.isJsonObject() ? json.getAsJsonObject().get("alchyx_studio") : null;
+                if (part == null) {
+                    message = "Can't import " + relative + ": it wasn't made by the studio's Export (no \"alchyx_studio\")";
+                } else {
+                    com.lealex.alchyx.animation.StudioSave studio = com.lealex.alchyx.animation.StudioSave.CODEC
+                            .parse(com.mojang.serialization.JsonOps.INSTANCE, part).getOrThrow().turned(core.rotation());
+                    int skipped = 0;
+                    edits.clear();
+                    setups.clear();
+                    for (com.lealex.alchyx.animation.StudioSave.Moving moving : studio.motions()) {
+                        BlockPos cell = moving.offset().subtract(min);
+                        BlockState look = looks.get(cell);
+                        if (!movable.contains(cell) || look == null || !rules.motions().contains(moving.motion()) || !moving.motion().fits(look)) {
+                            skipped++;
+                            continue;
+                        }
+                        edits.put(cell, moving.motion());
+                        putSetup(cell, moving.setup().tidy(moving.motion(), look));
+                    }
+                    marks.clear();
+                    for (StudioMark mark : studio.marks()) {
+                        if (marks.size() >= StudioMark.MAX) {
+                            skipped++;
+                            continue;
+                        }
+                        StudioMark here = mark.shifted(BlockPos.ZERO.subtract(min));
+                        marks.put(here.offset(), here);
+                    }
+                    hideFile = fixed && studio.hideFile();
+                    chosen.clear();
+                    spot = null;
+                    stillDirty = true;
+                    rebuildWidgets();
+                    message = "Imported " + relative + ": " + edits.size() + " moving blocks, " + marks.size() + " anchors"
+                            + (skipped > 0 ? " (" + skipped + " didn't fit this machine)" : "") + ". Save to keep it";
+                }
+            }
+        } catch (Exception e) {
+            AlchyX.LOGGER.warn("AlchyX: studio import failed", e);
+            message = "Couldn't import " + relative + ": " + e.getMessage();
         }
         if (minecraft.player != null) minecraft.player.sendSystemMessage(Component.literal(message));
     }
@@ -1366,7 +1456,63 @@ public class StudioScreen extends Screen {
 
     private boolean drawnApart(BlockPos cell) {
         Motion motion = edits.get(cell);
-        return motion != null && motion.moves();
+        return (motion != null && motion.moves()) || (!hideFile && fileMoved.contains(cell) && !edits.containsKey(cell));
+    }
+
+    /**
+     * How long ago (ticks) a block move of the machine's own file last started, at preview time {@code time}, or -1
+     * if none is playing: the pretend work is always "working" here, an operation every {@link #OPERATION} ticks.
+     */
+    private float fileMoveAge(Effect.BlockMove move, float time) {
+        com.lealex.alchyx.animation.Timing timing = move.timing();
+        float duration = Keyframe.duration(move.keyframes());
+        float started;
+        if (timing.when().continuous()) {
+            if (!timing.when().holds(true)) return -1;
+            int every = Math.max(1, timing.interval());
+            float since = time - timing.delay();
+            if (since < 0) return -1;
+            started = time - (since % every);
+            if (timing.windowed()) { // only the starts inside its window count: the last of them
+                for (int tries = 0; tries < 400 && !timing.within(true, (started % OPERATION) / OPERATION); tries++) started -= every;
+                if (!timing.within(true, (started % OPERATION) / OPERATION)) return -1;
+            }
+        } else { // "start" (or its keyframe) and "finish": once an operation
+            float opStart = (float) Math.floor(time / OPERATION) * OPERATION;
+            float at = timing.when() == com.lealex.alchyx.animation.Trigger.START && timing.windowed() ? opStart + timing.from() * OPERATION : opStart;
+            started = at + timing.delay();
+            if (started > time) started -= OPERATION;
+        }
+        float age = time - started;
+        return age >= 0 && age <= duration ? age : -1;
+    }
+
+    /** The machine's own file's block moves (a piston striking...), as they stand at preview time {@code time}. */
+    private void fileMovePieces(List<StudioRenderState.Piece> pieces, float time) {
+        if (hideFile) return;
+        Set<BlockPos> shownApart = new java.util.HashSet<>();
+        for (FileMove file : fileMoves) {
+            BlockPos cell = file.cell();
+            BlockState look = looks.get(cell);
+            if (look == null || cell.getY() > top || edits.containsKey(cell)) continue;
+            Effect.BlockMove move = file.move().effect();
+            float age = playing || clock > 0 ? fileMoveAge(move, time) : -1;
+            if (fileMoved.contains(cell) && shownApart.add(cell) && age < 0) { // the block itself, at rest
+                pieces.add(new StudioRenderState.Piece(pieceMesh(look), Vec3.atLowerCornerOf(cell), Vec3.ZERO, 1));
+            }
+            if (age < 0) continue;
+            if (!move.hide() && fileMoved.contains(cell)) { // the block itself, swapped while the move lasts
+                pieces.add(new StudioRenderState.Piece(pieceMesh(BlockLook.apply(look, move.swap())), Vec3.atLowerCornerOf(cell), Vec3.ZERO, 1));
+            }
+            Keyframe pose = Keyframe.at(move.keyframes(), age);
+            BlockState drawn = move.draw().map(com.lealex.alchyx.animation.BlockLook::build).orElse(look);
+            Direction d = file.move().direction();
+            if (move.align()) drawn = com.lealex.alchyx.client.animation.AnimationEngine.facing(drawn, d);
+            drawn = BlockLook.apply(drawn, Keyframe.stateAt(move.keyframes(), age));
+            Vec3 at = Vec3.atLowerCornerOf(cell).add(d.getStepX() * pose.move(), d.getStepY() * pose.move(), d.getStepZ() * pose.move())
+                    .add(com.lealex.alchyx.client.animation.AnimationEngine.turned(pose.offset(), file.move().rotation()));
+            pieces.add(new StudioRenderState.Piece(pieceMesh(drawn), at, pose.rotation(), pose.scale()));
+        }
     }
 
     /** What a cell looks like now in the preview: its own look, or the step a change of look is at. */
@@ -1445,6 +1591,7 @@ public class StudioScreen extends Screen {
                 pieces.add(new StudioRenderState.Piece(pieceMesh(look), at, pose.rotation(), pose.scale()));
             }
         }
+        fileMovePieces(pieces, time);
         if (tab == Tab.BLOCKS) {
             for (BlockPos cell : chosen) {
                 if (cell.getY() <= top) pieces.add(mark(cell, CHOSEN_MARK, 1.08F));

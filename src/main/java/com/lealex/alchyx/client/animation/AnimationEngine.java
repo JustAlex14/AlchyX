@@ -364,6 +364,33 @@ public final class AnimationEngine {
         return found;
     }
 
+    /** A block move of a machine's animation file, found on one of its blocks (for previews: the Machine Studio). */
+    public record PreviewMove(Effect.BlockMove effect, BlockPos pos, Direction direction, Rotation rotation) {}
+
+    /** Every block move {@code def} plays on this core's blocks, where and which way (world positions). */
+    public static List<PreviewMove> previewMoves(ClientLevel level, MultiblockCoreBlockEntity core, ResolvedAnimation def) {
+        Runtime rt = new Runtime(def, -1);
+        Rotation rotation = MultiblockPattern.rotationFor(def.front(), core.getBlockState());
+        List<PreviewMove> found = new ArrayList<>();
+        for (Effect effect : def.effects()) {
+            if (!(effect instanceof Effect.BlockMove move) || !move.timing().where().machine()) continue;
+            for (BlockPos pos : blocks(level, core, rt, rotation, move.targets())) {
+                found.add(new PreviewMove(move, pos.immutable(), direction(level, core, rotation, pos, move.direction()), rotation));
+            }
+        }
+        return found;
+    }
+
+    /** {@code state} turned to face {@code direction}, if it has a "facing". */
+    public static BlockState facing(BlockState state, Direction direction) {
+        return withFacing(state, direction);
+    }
+
+    /** A pattern-space vector turned like BlockPos.rotate (public for previews). */
+    public static Vec3 turned(Vec3 v, Rotation rotation) {
+        return rotate(v, rotation);
+    }
+
     /** A pattern-space vector turned like BlockPos.rotate. */
     static Vec3 rotate(Vec3 v, Rotation rotation) {
         return switch (rotation) {

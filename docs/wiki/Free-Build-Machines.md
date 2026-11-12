@@ -117,6 +117,10 @@ The Machine Studio also opens on machines with a fixed shape (AlchyMastery's, fo
 - **Own anim: on / off**: the machine's own animation (its mod's files) keeps playing along with what you make (on), or stops so only yours plays (off). **Save** keeps it.
 - **Export**: writes what you made (saved or not) as an animation file in the game folder, `alchyx_exports/<mod>/machine_animation/<machine>_studio.json`. Put it in a datapack at `data/<mod>/machine_animation/` and every machine of that kind plays it. With the own animation off, the file says `"replace": true` and replaces the mod's.
 
+- **Import**: brings an exported file back into the studio (from the same place Export writes it), in place of what's there, to change it. Copy a file there to bring in one made on another world or by someone else. Nothing changes on the machine until **Save**. The file keeps what you made in the pattern's own frame, so it fits a machine of that kind turned any way.
+
+The preview also plays the machine's own block moves (a piston striking, from its animation file) while its own animation is on.
+
 What you save is kept on that one machine only. Block data (**Data...**) stays on the machine and isn't exported.
 
 A mod can keep the studio off its machines: its core block entity returns `false` from `studioEditable()` (for a machine that draws itself in its own code). A pack can do the same for any machine by adding its core block to the block tag `alchyx:studio_locked`.

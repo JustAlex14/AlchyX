@@ -223,6 +223,7 @@ public class ScriptedCoreBlockEntity extends MultiblockCoreBlockEntity implement
             setAnimationWorking(false);
             return;
         }
+        if (!Float.isFinite(pace)) pace = 0;
         pace += speed;
         int steps = Math.min((int) pace, recipe.time() - progress);
         if (steps <= 0) { // (slower than one step a tick: this tick only gathers pace)
@@ -521,6 +522,10 @@ public class ScriptedCoreBlockEntity extends MultiblockCoreBlockEntity implement
      * structures timed on it, follow: the operation under way plays its rest at the new pace.
      */
     public void setSpeed(float speed) {
+        if (!Float.isFinite(speed)) { // a script's bad number (NaN from an undefined value): ignore it, never stall
+            com.lealex.alchyx.AlchyX.LOGGER.warn("AlchyX: {} was given speed {}, keeping {}", getBlockPos(), speed, this.speed);
+            return;
+        }
         speed = Math.max(0.05F, Math.min(64.0F, speed));
         if (speed == this.speed) return;
         this.speed = speed;
@@ -603,6 +608,8 @@ public class ScriptedCoreBlockEntity extends MultiblockCoreBlockEntity implement
         currentRecipe = input.read("recipe", Identifier.CODEC).orElse(null);
         progress = input.getIntOr("progress", 0);
         speed = input.getFloatOr("speed", 1.0F);
+        if (!Float.isFinite(speed) || speed <= 0) speed = 1.0F;
+        if (!Float.isFinite(pace)) pace = 0;
         lookupDirty = true;
     }
 

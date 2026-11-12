@@ -68,6 +68,6 @@ AlchyXEvents.operationFinished(HATCHERY, event => {
 AlchyXEvents.tick(HATCHERY, event => {
   // The heat: 1x with none, 2x with 4 blaze powder, 17x with a full stack
   let heat = event.machine.getItem(HEAT_SLOT)
-  let powder = heat.id == 'minecraft:blaze_powder' ? heat.count : 0
+  let powder = heat.id == 'minecraft:blaze_powder' ? heat.getCount() : 0
   event.machine.setSpeed(1 + powder * 0.25)
 })

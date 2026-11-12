@@ -31,6 +31,8 @@ import java.util.Optional;
  *       "output", "result"), each with its own {@link ItemShow}: when in the work it shows and how it moves (spins,
  *       stays still, bobs, or travels to {@code to} through its time). Without items, the display {@code what}
  *       floats there (and travels to {@code to}, leaving and arriving as {@link Times} say).</li>
+ *   <li>{@link Kind#EFFECT}: an effect a mod draws with its own code ({@link StudioEffects}: a rift portal...),
+ *       turned by {@code yaw} degrees;</li>
  *   <li>{@link Kind#SOUND}: a sound of that id plays there as the work reaches its start (its show time), once,
  *       or again every {@code yaw} ticks until its end when {@code yaw} is more than 0.</li>
  * </ul>
@@ -155,7 +157,7 @@ public record StudioMark(BlockPos offset, Kind kind, String what, int yaw, Optio
     }
 
     public enum Kind implements StringRepresentable {
-        PARTICLES("particles"), FIGURE("figure"), ITEM("item"), SOUND("sound");
+        PARTICLES("particles"), FIGURE("figure"), ITEM("item"), SOUND("sound"), EFFECT("effect");
 
         public static final Codec<Kind> CODEC = StringRepresentable.fromEnum(Kind::values);
         private final String name;
@@ -307,6 +309,9 @@ public record StudioMark(BlockPos offset, Kind kind, String what, int yaw, Optio
                         : new Timing(Trigger.START, 1, 1.0F, 0, Map.of(), Timing.Where.EVERYWHERE).between(from, until);
                 yield List.of(new Effect.Sound(timing, id, at, 1.0F, 1.0F, 0.05F));
             }
+            case EFFECT -> id == null ? List.of() : List.of(new Effect.Figure(new Timing(Trigger.ALWAYS, 1, 1.0F, 0, Map.of(), Timing.Where.EVERYWHERE).between(from, until),
+                    Optional.empty(), Optional.empty(), Optional.of(id), at, Optional.empty(), Optional.of((float) yaw), false,
+                    0.0F, 0.0F, 1.0F, false, Optional.empty(), Optional.empty()));
             case FIGURE -> id == null ? List.of() : List.of(new Effect.Figure(new Timing(Trigger.ALWAYS, 1, 1.0F, 0, Map.of(), Timing.Where.EVERYWHERE).between(from, until),
                     Optional.of(id), Optional.empty(), Optional.empty(), at, Optional.empty(), Optional.of((float) yaw), false,
                     0.0F, 0.0F, 1.0F, false, Optional.empty(), Optional.empty()));

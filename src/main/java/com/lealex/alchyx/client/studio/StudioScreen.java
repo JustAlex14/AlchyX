@@ -81,8 +81,10 @@ public class StudioScreen extends Screen {
     private enum Tab { BLOCKS, ANCHORS }
 
     private final BlockPos corePos;
-    private final MultiblockPattern shape;
+    private final @Nullable Object shape;                    // the machine's shape when the studio opened (it closes if that changes)
     private final FreeBuild rules;
+    private final boolean fixed;                             // a machine with a fixed shape (its own animation files play too)
+    private boolean hideFile, savedHideFile;                 // its own animation turned off, so only the studio's plays
     private final BlockPos min, size;                        // the build's box: lowest offset from the core, and its size
     private final Map<BlockPos, BlockState> looks = new HashMap<>();     // what shows at each cell (box coordinates)
     private final Set<BlockPos> movable = new LinkedHashSet<>();        // cells that can be given a motion
@@ -119,21 +121,24 @@ public class StudioScreen extends Screen {
     private @Nullable Button particlesButton, figureButton, itemButton, soundButton, removeButton, previousButton, nextButton, turnButton;
     private @Nullable Button appearButton, vanishButton, leaveButton, arriveButton, alwaysButton, pickItemsButton;
     private final List<Button> blockButtons = new ArrayList<>(); // Blocks tab: when the chosen blocks' motion plays, a change's state
-    private @Nullable Button startButton, stopButton, wholeButton, stateButton, dataButton;
+    private @Nullable Button startButton, stopButton, wholeButton, stateButton, dataButton, effectButton;
     private int motionRows;                // rows of motion buttons (Blocks tab)
     private static final int ICONS_PER_ROW = 7;
 
     public StudioScreen(MultiblockCoreBlockEntity core) {
         super(Component.literal("Machine Studio"));
         this.corePos = core.getBlockPos().immutable();
-        this.shape = core.recordedShape();
-        this.rules = core.freeBuild();
-        this.min = shape.minOffset();
-        BlockPos max = shape.maxOffset();
+        this.shape = core.recordedShape() != null ? core.recordedShape() : core.pattern();
+        this.rules = java.util.Objects.requireNonNull(core.studioRules());
+        this.fixed = core.freeBuild() == null;
+        this.hideFile = this.savedHideFile = core.hidesFileAnimation();
+        BlockPos[] box = core.studioBox();
+        this.min = box[0];
+        BlockPos max = box[1];
         this.size = new BlockPos(max.getX() - min.getX() + 1, max.getY() - min.getY() + 1, max.getZ() - min.getZ() + 1);
         this.top = size.getY() - 1;
         ClientLevel level = Minecraft.getInstance().level;
-        for (MultiblockPattern.LookCell cell : shape.formedLook()) {
+        for (MultiblockPattern.LookCell cell : core.studioCells()) {
             BlockPos at = cell.offset().subtract(min);
             // As it stands in the world (the core's own facing, every state the record didn't keep), else as recorded
             BlockState real = level == null ? null : com.lealex.alchyx.block.ChamberShellBlock.lookAt(level, corePos.offset(cell.offset()));
@@ -194,6 +199,18 @@ public class StudioScreen extends Screen {
         }).bounds(x, y, 64, 20).build());
 
         saveButton = addRenderableWidget(Button.builder(Component.literal("Save"), b -> save()).bounds(width - MARGIN - 104, y, 50, 20).build());
+        if (fixed) { // a machine with a fixed shape: its own animation on or off, and the work as a datapack file
+            x += 68;
+            Button own = addRenderableWidget(Button.builder(Component.literal(hideFile ? "Own anim: off" : "Own anim: on"), b -> {
+                hideFile = !hideFile;
+                b.setMessage(Component.literal(hideFile ? "Own anim: off" : "Own anim: on"));
+                refreshButtons();
+            }).bounds(x, y, 80, 20).build());
+            own.setTooltip(Tooltip.create(Component.literal("The machine's own animation (its mod's files): on, playing with what you make here, or off, so only yours plays (Save to keep it)")));
+            x += 84;
+            Button export = addRenderableWidget(Button.builder(Component.literal("Export"), b -> export()).bounds(x, y, 50, 20).build());
+            export.setTooltip(Tooltip.create(Component.literal("Write what you made here as an animation file for a datapack: every machine of this kind plays it")));
+        }
         addRenderableWidget(Button.builder(Component.literal("Close"), b -> onClose()).bounds(width - MARGIN - 50, y, 50, 20).build());
 
         // The tabs
@@ -241,7 +258,7 @@ public class StudioScreen extends Screen {
 
         // Anchors: what plays at the spot
         py = LIST_TOP;
-        int quarter = (wide - 6) / 4;
+        int quarter = (wide - 8) / 5;
         particlesButton = addRenderableWidget(Button.builder(Component.literal("Fx"), b -> putMark(StudioMark.Kind.PARTICLES))
                 .bounds(px, py, quarter, 18).build());
         particlesButton.setTooltip(Tooltip.create(Component.literal("Particles rise here: smoke, flames, glyphs...")));
@@ -251,8 +268,11 @@ public class StudioScreen extends Screen {
         itemButton = addRenderableWidget(Button.builder(Component.literal("Item"), b -> putMark(StudioMark.Kind.ITEM))
                 .bounds(px + 2 * (quarter + 2), py, quarter, 18).build());
         itemButton.setTooltip(Tooltip.create(Component.literal("Items float here: the machine's input, output, any item")));
-        soundButton = addRenderableWidget(Button.builder(Component.literal("Sound"), b -> putMark(StudioMark.Kind.SOUND))
-                .bounds(px + 3 * (quarter + 2), py, wide - 3 * (quarter + 2), 18).build());
+        soundButton = addRenderableWidget(Button.builder(Component.literal("Snd"), b -> putMark(StudioMark.Kind.SOUND))
+                .bounds(px + 3 * (quarter + 2), py, quarter, 18).build());
+        effectButton = addRenderableWidget(Button.builder(Component.literal("Mod"), b -> putMark(StudioMark.Kind.EFFECT))
+                .bounds(px + 4 * (quarter + 2), py, wide - 4 * (quarter + 2), 18).build());
+        effectButton.setTooltip(Tooltip.create(Component.literal("An effect a mod draws here: a rift portal, a sigil... (from the mods that add some)")));
         soundButton.setTooltip(Tooltip.create(Component.literal("A sound plays here as the work reaches its start (the timeline)")));
         py += ROW;
         previousButton = addRenderableWidget(Button.builder(Component.literal("<"), b -> cycleMark(-1)).bounds(px, py, 18, 18).build());
@@ -280,7 +300,7 @@ public class StudioScreen extends Screen {
         py += ROW;
         pickItemsButton = addRenderableWidget(Button.builder(Component.literal("Items..."), b -> pickItems()).bounds(px, py, wide, 18).build());
         pickItemsButton.setTooltip(Tooltip.create(Component.literal("Its items, each with its own time and way of moving: any item, modded ones too, or a display")));
-        anchorButtons.addAll(List.of(particlesButton, figureButton, itemButton, soundButton, previousButton, nextButton, turnButton, removeButton,
+        anchorButtons.addAll(List.of(particlesButton, figureButton, itemButton, soundButton, effectButton, previousButton, nextButton, turnButton, removeButton,
                 appearButton, vanishButton, leaveButton, arriveButton, alwaysButton, pickItemsButton));
         refreshButtons();
     }
@@ -319,7 +339,8 @@ public class StudioScreen extends Screen {
     }
 
     private boolean changed() {
-        return !edits.equals(saved) || !setups.equals(savedSetups) || !marks.equals(savedMarks) || !dataEdits.isEmpty();
+        return !edits.equals(saved) || !setups.equals(savedSetups) || !marks.equals(savedMarks) || !dataEdits.isEmpty()
+                || hideFile != savedHideFile;
     }
 
     private void refreshButtons() {
@@ -372,6 +393,8 @@ public class StudioScreen extends Screen {
                 && (mark == null || mark.kind() != StudioMark.Kind.ITEM) && (mark != null || marks.size() < StudioMark.MAX);
         if (soundButton != null) soundButton.active = spot != null
                 && (mark == null || mark.kind() != StudioMark.Kind.SOUND) && (mark != null || marks.size() < StudioMark.MAX);
+        if (effectButton != null) effectButton.active = spot != null && !choicesFor(StudioMark.Kind.EFFECT).isEmpty()
+                && (mark == null || mark.kind() != StudioMark.Kind.EFFECT) && (mark != null || marks.size() < StudioMark.MAX);
         if (previousButton != null) previousButton.active = mark != null;
         if (nextButton != null) nextButton.active = mark != null;
         if (removeButton != null) removeButton.active = mark != null;
@@ -512,6 +535,11 @@ public class StudioScreen extends Screen {
         List<String> usable = new ArrayList<>();
         switch (kind) {
             case FIGURE -> rules.figures().forEach(id -> usable.add(id.toString()));
+            case EFFECT -> {
+                for (Identifier id : com.lealex.alchyx.animation.StudioEffects.ids()) {
+                    if (com.lealex.alchyx.client.animation.Figures.get(id) != null) usable.add(id.toString());
+                }
+            }
             case ITEM -> usable.addAll(StudioMark.DISPLAYS);
             case SOUND -> usable.addAll(soundIds());
             case PARTICLES -> {
@@ -671,7 +699,7 @@ public class StudioScreen extends Screen {
         });
         Map<BlockPos, net.minecraft.nbt.CompoundTag> data = new LinkedHashMap<>();
         dataEdits.forEach((cell, tag) -> data.put(cell.offset(min), tag));
-        connection.send(new ServerboundCustomPayloadPacket(new MachineStudio.Save(corePos, motions, timings, sent, data)));
+        connection.send(new ServerboundCustomPayloadPacket(new MachineStudio.Save(corePos, motions, timings, sent, data, hideFile)));
         dataEdits.clear();
         saved.clear();
         saved.putAll(edits);
@@ -679,7 +707,47 @@ public class StudioScreen extends Screen {
         savedSetups.putAll(setups);
         savedMarks.clear();
         savedMarks.putAll(marks);
+        savedHideFile = hideFile;
         refreshButtons();
+    }
+
+    /**
+     * Writes what's made here (as it stands in the studio, saved or not) as an animation file for a datapack, in the
+     * game folder: alchyx_exports/<namespace>/machine_animation/<machine>_studio.json. Every machine of this kind
+     * then plays it; with its own animation off, the file replaces the mod's ("replace": true).
+     */
+    private void export() {
+        Minecraft minecraft = Minecraft.getInstance();
+        if (minecraft.level == null || !(minecraft.level.getBlockEntity(corePos) instanceof MultiblockCoreBlockEntity core)) return;
+        Map<BlockPos, Motion> motions = new LinkedHashMap<>();
+        Map<BlockPos, MotionSetup> timings = new LinkedHashMap<>();
+        edits.forEach((cell, motion) -> {
+            motions.put(cell.offset(min), motion);
+            MotionSetup setup = setups.get(cell);
+            if (setup != null) timings.put(cell.offset(min), setup);
+        });
+        List<StudioMark> sent = new ArrayList<>();
+        for (StudioMark mark : marks.values()) sent.add(mark.shifted(min));
+        com.lealex.alchyx.client.animation.Motions.Layer layer = com.lealex.alchyx.client.animation.Motions.layer(minecraft.level, corePos,
+                motions, timings, sent, rules.motionWhen(), core.rotation());
+        Identifier machine = core.patternId();
+        com.lealex.alchyx.animation.MachineAnimation file = new com.lealex.alchyx.animation.MachineAnimation(java.util.Optional.of(machine),
+                hideFile, layer.anchors(), layer.effects());
+        String message;
+        try {
+            com.google.gson.JsonElement json = com.lealex.alchyx.animation.MachineAnimation.CODEC
+                    .encodeStart(com.mojang.serialization.JsonOps.INSTANCE, file).getOrThrow();
+            java.nio.file.Path path = minecraft.gameDirectory.toPath().resolve("alchyx_exports").resolve(machine.getNamespace())
+                    .resolve("machine_animation").resolve(machine.getPath() + "_studio.json");
+            java.nio.file.Files.createDirectories(path.getParent());
+            java.nio.file.Files.writeString(path, new com.google.gson.GsonBuilder().setPrettyPrinting().create().toJson(json));
+            message = "Exported to " + minecraft.gameDirectory.toPath().relativize(path).toString().replace('\\', '/')
+                    + " (put it in a datapack: data/" + machine.getNamespace() + "/machine_animation/)";
+        } catch (Exception e) {
+            AlchyX.LOGGER.warn("AlchyX: studio export failed", e);
+            message = "Couldn't export: " + e.getMessage();
+        }
+        if (minecraft.player != null) minecraft.player.sendSystemMessage(Component.literal(message));
     }
 
     // ---- Each tick: the machine must still be there ----
@@ -688,7 +756,7 @@ public class StudioScreen extends Screen {
     public void tick() {
         Minecraft minecraft = Minecraft.getInstance();
         if (minecraft.level == null || !(minecraft.level.getBlockEntity(corePos) instanceof MultiblockCoreBlockEntity core)
-                || !MachineStudio.opens(core) || core.recordedShape() != shape
+                || !MachineStudio.opens(core) || (core.recordedShape() != null ? core.recordedShape() : core.pattern()) != shape
                 || minecraft.player == null || minecraft.player.distanceToSqr(corePos.getCenter()) > 16 * 16) {
             onClose();
             return;
@@ -1091,7 +1159,7 @@ public class StudioScreen extends Screen {
         int x0 = viewX0(), y0 = viewY0(), x1 = viewX1(), y1 = viewY1();
         graphics.fill(x0 - 1, y0 - 1, x1 + 1, y1 + 1, EDGE);
         graphics.fill(x0, y0, x1, y1, VIEW_BACK);
-        graphics.submitPictureInPictureRenderState(new StudioRenderState(stillMesh(), pieces(a), figures(a), items(a), center(), yaw, pitch,
+        graphics.submitPictureInPictureRenderState(new StudioRenderState(stillMesh(), pieces(a), figures(a), items(a), coded(a), center(), yaw, pitch,
                 x0, y0, x1, y1, scale(), graphics.peekScissorStack()));
 
         // Header
@@ -1484,6 +1552,24 @@ public class StudioScreen extends Screen {
 
     private StudioRenderState.Piece mark(BlockPos cell, BlockState glass, float size) {
         return new StudioRenderState.Piece(pieceMesh(glass), Vec3.atLowerCornerOf(cell), Vec3.ZERO, size);
+    }
+
+    /** The effects mods draw at "Mod" anchors, through their time. */
+    private List<StudioRenderState.CodedPiece> coded(float partialTicks) {
+        List<StudioRenderState.CodedPiece> list = new ArrayList<>();
+        Vec3 lit = Minecraft.getInstance().player == null ? Vec3.ZERO : Minecraft.getInstance().player.position();
+        for (StudioMark mark : marks.values()) {
+            if (mark.kind() != StudioMark.Kind.EFFECT || mark.offset().getY() > top || !mark.times().shows(progress(partialTicks))) continue;
+            Identifier id = mark.id();
+            com.lealex.alchyx.client.animation.CodedFigure figure = id == null ? null : com.lealex.alchyx.client.animation.Figures.get(id);
+            if (figure == null) continue;
+            com.lealex.alchyx.client.animation.CodedFigure.Context context = new com.lealex.alchyx.client.animation.CodedFigure.Context(
+                    net.minecraft.world.item.ItemStack.EMPTY, playing, clock + (playing ? partialTicks : 0),
+                    net.minecraft.util.LightCoordsUtil.FULL_BRIGHT, this, lit, mark.yaw(), partialTicks);
+            list.add(new StudioRenderState.CodedPiece(new com.lealex.alchyx.client.animation.FigureDrawer.Prepared(null, figure, context,
+                    mark.yaw(), 1.0F, 0.0F), new Vec3(mark.offset().getX() + 0.5, mark.offset().getY(), mark.offset().getZ() + 0.5)));
+        }
+        return list;
     }
 
     /** The figures standing at anchors, as entities made only to be drawn (never added to the world). */

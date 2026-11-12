@@ -40,7 +40,7 @@ Once the machine stands, use the Recorder on its **core** with no corners marked
 
 - **Drag** to turn the view, use the **wheel** to zoom, and use the **- / +** layer buttons to hide the top layers and look inside.
 - **Blocks** tab: **click** a block to choose it. **Shift + click** adds or removes one block. **Ctrl + click** chooses every block of that kind. Pick a **motion** on the right; greyed motions are the ones those blocks can't do. To time it, drag its bar on the timeline (see below), or move the player and press **Start here** / **Stop here** (a spawner that spins from 2 s to 5 s); **Always** plays it all the time again. **State...** opens a menu with every property of the block (a trial spawner's `trial_spawner_state`, a vault's `vault_state`, `lit`, `facing`...): pick a value for each, or **keep**. A cauldron also gets **Holds** (nothing, water, lava or powder snow) and its `level`. What you pick is a **step** from where the player stands on the work bar: move the player and press **State...** again to change the step showing there, **New step here** to add another one from that point (water level 1 at 1 s, level 3 at 2.5 s, lava at 4 s), or **Remove step**. Each step shows from its keyframe to the next one's, the block looks as it is before the first, and each step gets its own bar on the timeline to drag. A spawner has no state of its own, so it can spin or bob but not change. **Data...** opens the block's data (its block entity data as SNBT, like `/data` shows it: a spawner's mob, a banner's patterns, a modded block's settings) to change it; a spawner also gets a mob box (`minecraft:blaze`, **Set mob**). The machine keeps that data with the block and draws the block with it in the world (a spawner shows its mob turning inside). It only changes how the machine looks: the data never goes back into a real block. Blocks that had data when the machine formed keep it on their own (not containers: their contents drop as before).
-- **Anchors** tab: click the side of a block to pick the spot in front of it (inside the build or right around it). Then choose **Fx** (particles: smoke, flames, enchanting glyphs...), a **Mob** (a figure: a villager, a golem, a cat...), an **Item** (the item the machine works on: its input, output or result, or any item) or a **Sound**, and use **< >** to pick which one. **Turn** turns a figure. For an item, **Travel** then a click on another spot makes it travel there as the work goes on (the cobblestone carried from the hopper to the press). Click an anchor to change or **Remove** it. Up to 24 anchors.
+- **Anchors** tab: click the side of a block to pick the spot in front of it (inside the build or right around it). Then choose **Fx** (particles: smoke, flames, enchanting glyphs...), a **Mob** (a figure: a villager, a golem, a cat...), an **Item** (the item the machine works on: its input, output or result, or any item), a **Snd** (sound) or a **Mod** effect (something a mod draws itself, like a rift portal; only when a mod adds some), and use **< >** to pick which one. **Turn** turns a figure or a mod effect. For an item, **Travel** then a click on another spot makes it travel there as the work goes on (the cobblestone carried from the hopper to the press). Click an anchor to change or **Remove** it. Up to 24 anchors.
 - **Sounds**: **Sound** (or **Pick sound...** on a sound anchor) opens every sound of the game, modded ones too, with a search bar; click one to hear it, double click or **Done** to pick it. It plays as the work reaches the start of its bar on the timeline; **Once** / **Every 0.5s, 1s, 2s** makes it play once or again and again until its bar ends. The preview plays it too. (The sounds the machine's own animation file plays stay as they are.)
 - The **work bar** at the bottom of the view plays a pretend operation: items travel and cauldrons fill along with it. Drag it to scrub through the work.
 - **Items...** (Anchors tab): the anchor's item list, on its own screen. Each item has a row: how it moves while it shows (**Spin**, **Still**, **Bob**, or **Travel**: it goes to the anchor's other spot through its own time), **^ v** to move it in the list and **x** to take it out. **Add item...** opens a menu with every item in the game, modded ones included, with a search bar (by name, id or mod name, like `create:`); the machine's displays come first: **input**, **output** and **result**. **One by one** shares the work evenly, in list order. **Done** keeps the list, **Cancel** leaves it as it was. On an empty spot it makes a new item anchor. In the studio, the items under the anchor are lit while they show; click one to open the list.
@@ -110,6 +110,28 @@ The shape is the player's, so the machine's strength should come from what you r
 
 Every block in the box is recorded exactly, turned the way it stands (facing, axis, slab type, upper or lower half). State that changes by itself, like a crop's age or a stair's corner shape, is not checked. Air is recorded as "anything": a torch placed later never breaks the machine.
 
+### The studio on any machine
+
+The Machine Studio also opens on machines with a fixed shape (AlchyMastery's, for example): use the Recorder on a formed machine's core with no corners marked. Everything above works the same, on the blocks the machine is made of. Two more buttons at the bottom:
+
+- **Own anim: on / off**: the machine's own animation (its mod's files) keeps playing along with what you make (on), or stops so only yours plays (off). **Save** keeps it.
+- **Export**: writes what you made (saved or not) as an animation file in the game folder, `alchyx_exports/<mod>/machine_animation/<machine>_studio.json`. Put it in a datapack at `data/<mod>/machine_animation/` and every machine of that kind plays it. With the own animation off, the file says `"replace": true` and replaces the mod's.
+
+What you save is kept on that one machine only. Block data (**Data...**) stays on the machine and isn't exported.
+
+A mod can keep the studio off its machines: its core block entity returns `false` from `studioEditable()` (for a machine that draws itself in its own code). A pack can do the same for any machine by adding its core block to the block tag `alchyx:studio_locked`.
+
+### Mod effects (from code)
+
+A mod can let players put its own coded effects at anchors (a rift portal, a sigil...). Register the id on both sides, and draw it on the client as a coded figure:
+
+```java
+StudioEffects.register(Identifier.fromNamespaceAndPath("alchyrift", "portal"), "Rift portal"); // common (mod constructor)
+Figures.register(Identifier.fromNamespaceAndPath("alchyrift", "portal"), (context, pose, collector, camera) -> { ... }); // client setup
+```
+
+The studio lists it under **Mod**, previews it, and the machine plays it as a `figure` effect (`"figure": "alchyrift:portal"`) at the anchor, turned by the anchor's turn, through its time on the timeline. The context gives the time, whether the machine works, the light and the yaw.
+
 ### Animations
 
 Animation files work on free-build machines too. Block selectors (`"targets": {"block": "minecraft:piston"}`) find the matching blocks in each player's own build, so one file animates every version of the machine. Anchors don't exist on a recorded shape, so use `core`, offsets from it, or block selectors.
@@ -118,6 +140,8 @@ Animation files work on free-build machines too. Block selectors (`"targets": {"
 
 ```java
 FreeBuild rules = core.freeBuild();             // null for a fixed-shape machine
+FreeBuild studio = core.studioRules();          // what the studio allows here (fixed shape: FreeBuild.STUDIO), or null
+core.studioEditable();                          // override: false keeps the studio off this machine
 MultiblockPattern shape = core.recordedShape(); // null until a player records one
 String problem = core.recordShape(cornerA, cornerB); // null when recorded (server side)
 core.forgetShape();                             // also clears the motions

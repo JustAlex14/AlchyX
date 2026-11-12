@@ -22,6 +22,7 @@ import java.util.TreeMap;
 public final class MachineAnimations extends SimpleJsonResourceReloadListener<MachineAnimation> {
 
     private static volatile Map<Identifier, List<Effect>> effects = Map.of();
+    private static volatile Map<Identifier, Map<String, net.minecraft.core.BlockPos>> fileAnchors = Map.of();
 
     MachineAnimations() {
         super(MachineAnimation.CODEC, FileToIdConverter.json("machine_animation"));
@@ -30,14 +31,21 @@ public final class MachineAnimations extends SimpleJsonResourceReloadListener<Ma
     @Override
     protected void apply(Map<Identifier, MachineAnimation> loaded, ResourceManager manager, ProfilerFiller profiler) {
         Map<Identifier, List<Effect>> byMachine = new LinkedHashMap<>();
+        Map<Identifier, Map<String, net.minecraft.core.BlockPos>> anchorsByMachine = new LinkedHashMap<>();
         // Sorted by file id so "replace" and the effect order don't depend on hash order
         for (Map.Entry<Identifier, MachineAnimation> file : new TreeMap<>(loaded).entrySet()) {
             Identifier machine = file.getValue().machine().orElse(file.getKey());
             List<Effect> list = byMachine.computeIfAbsent(machine, id -> new ArrayList<>());
-            if (file.getValue().replace()) list.clear();
+            Map<String, net.minecraft.core.BlockPos> named = anchorsByMachine.computeIfAbsent(machine, id -> new LinkedHashMap<>());
+            if (file.getValue().replace()) {
+                list.clear();
+                named.clear();
+            }
             list.addAll(file.getValue().effects());
+            named.putAll(file.getValue().anchors());
         }
         effects = Map.copyOf(byMachine);
+        fileAnchors = Map.copyOf(anchorsByMachine);
         AlchyX.LOGGER.info("AlchyX: loaded animations for {} machine(s): {}", byMachine.size(), byMachine.keySet());
     }
 
@@ -50,7 +58,9 @@ public final class MachineAnimations extends SimpleJsonResourceReloadListener<Ma
                 AlchyX.LOGGER.warn("AlchyX: animation for {} skipped: no multiblock pattern with that id", entry.getKey());
                 continue;
             }
-            list.add(new ResolvedAnimation(entry.getKey(), pattern.front(), pattern.anchors(),
+            Map<String, net.minecraft.core.BlockPos> anchors = new LinkedHashMap<>(fileAnchors.getOrDefault(entry.getKey(), Map.of()));
+            anchors.putAll(pattern.anchors());
+            list.add(new ResolvedAnimation(entry.getKey(), pattern.front(), Map.copyOf(anchors),
                     pattern.minOffset(), pattern.maxOffset(), entry.getValue()));
         }
         return list;

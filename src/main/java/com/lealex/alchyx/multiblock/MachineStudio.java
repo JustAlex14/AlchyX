@@ -24,7 +24,7 @@ import java.util.Map;
 import java.util.function.Consumer;
 
 /**
- * The Machine Studio: a screen that shows a formed free-build machine in 3D (client/studio/StudioScreen), where its
+ * The Machine Studio: a screen that shows a formed machine (a free build, or one with a fixed shape) in 3D (client/studio/StudioScreen), where its
  * player picks how each block moves and saves it all at once. The screen opens on the client when the Structure
  * Recorder is used on such a core with no corners marked; this side only takes the save.
  */
@@ -42,14 +42,17 @@ public final class MachineStudio {
     /** Opens the studio for the core at this position (set by the client). */
     public static Consumer<BlockPos> clientOpen = pos -> {};
 
-    /** Whether the studio can show this core: a formed free-build machine with its shape recorded. */
+    /**
+     * Whether the studio can show this core: a formed free-build machine with its shape recorded, or a formed machine
+     * with a fixed shape that allows it (see {@link MultiblockCoreBlockEntity#studioRules}).
+     */
     public static boolean opens(MultiblockCoreBlockEntity core) {
-        return core.freeBuild() != null && core.recordedShape() != null && core.isFormed();
+        return core.studioOpens();
     }
 
     /** The studio's save (client to server): every motion of the machine (and when it plays), by offset from the core. */
     public record Save(BlockPos core, Map<BlockPos, Motion> motions, Map<BlockPos, MotionSetup> setups, List<StudioMark> marks,
-                       Map<BlockPos, net.minecraft.nbt.CompoundTag> data) implements CustomPacketPayload {
+                       Map<BlockPos, net.minecraft.nbt.CompoundTag> data, boolean hideFile) implements CustomPacketPayload {
         public static final Type<Save> TYPE = new Type<>(AlchyX.id("studio_save"));
         public static final StreamCodec<RegistryFriendlyByteBuf, Save> STREAM_CODEC = StreamCodec.of(
                 (buf, save) -> {
@@ -67,6 +70,7 @@ public final class MachineStudio {
                         BlockPos.STREAM_CODEC.encode(buf, offset);
                         net.minecraft.network.codec.ByteBufCodecs.COMPOUND_TAG.encode(buf, tag);
                     });
+                    buf.writeBoolean(save.hideFile());
                 },
                 buf -> {
                     BlockPos core = BlockPos.STREAM_CODEC.decode(buf);
@@ -94,7 +98,7 @@ public final class MachineStudio {
                         BlockPos offset = BlockPos.STREAM_CODEC.decode(buf);
                         data.put(offset, net.minecraft.network.codec.ByteBufCodecs.COMPOUND_TAG.decode(buf));
                     }
-                    return new Save(core, motions, setups, marks, data);
+                    return new Save(core, motions, setups, marks, data, buf.readBoolean());
                 });
 
         @Override
@@ -119,7 +123,7 @@ public final class MachineStudio {
             player.sendSystemMessage(Component.literal("You can't change this machine here"), true);
             return;
         }
-        int kept = core.setStudio(save.motions(), save.setups(), save.marks());
+        int kept = core.setStudio(save.motions(), save.setups(), save.marks(), save.hideFile());
         if (kept < 0) return;
         int dropped = save.motions().size() + save.marks().size() - kept;
         // Block data (a spawner's mob...): only on this machine's parts that have a block entity, kept by the shell

@@ -65,6 +65,13 @@ public record FreeBuild(int maxWidth, int maxHeight, int minBlocks, List<BlockMa
         return java.util.Arrays.stream(names).map(Identifier::withDefaultNamespace).toList();
     }
 
+    /**
+     * What players may do with the Machine Studio on a machine with a fixed shape (an AlchyMastery machine...): every
+     * motion, the default particles and figures, playing while it works.
+     */
+    public static final FreeBuild STUDIO = new FreeBuild(7, 7, 1, List.of(), List.of(), List.of(), Formed.SAME,
+            List.of(Motion.values()), Trigger.WORKING, DEFAULT_PARTICLES, DEFAULT_FIGURES);
+
     /** No box may be larger than this along any axis, whatever a file says (block change lookups stay cheap). */
     public static final int HARD_LIMIT = 32;
 

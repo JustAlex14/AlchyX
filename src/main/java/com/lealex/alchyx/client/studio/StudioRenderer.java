@@ -55,6 +55,16 @@ public class StudioRenderer extends PictureInPictureRenderer<StudioRenderState> 
             item.item().submit(poseStack, features.getSubmitNodeStorage(), light, net.minecraft.client.renderer.texture.OverlayTexture.NO_OVERLAY, 0);
             poseStack.popPose();
         }
+        for (StudioRenderState.CodedPiece coded : state.coded()) {
+            poseStack.pushPose();
+            poseStack.translate(coded.at().x, coded.at().y, coded.at().z);
+            try {
+                com.lealex.alchyx.client.animation.FigureDrawer.submit(coded.figure(), poseStack, features.getSubmitNodeStorage(), camera);
+            } catch (Throwable e) { // a mod's drawing must never take the studio down
+                com.lealex.alchyx.AlchyX.LOGGER.warn("AlchyX: a mod effect failed to draw in the Machine Studio: {}", e.toString());
+            }
+            poseStack.popPose();
+        }
         features.renderAllFeatures();
     }
 

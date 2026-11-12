@@ -24,6 +24,8 @@ machine is formed, and only for players within 64 blocks.
   `alchymastery:destructuration_chamber`.
 - `replace`: several files can animate the same machine and their effects add up. A file with `"replace": true`
   throws away the effects of the files loaded before it (files load in id order).
+- `anchors` (optional): more anchors for the machine, `{"spot": [1, 2, 0]}`: offsets from the core in the pattern's own
+  frame, usable like the pattern's anchors (whose names win on a clash). The Machine Studio's **Export** writes them.
 - `effects`: the list below.
 
 ## When an effect runs (all effects)

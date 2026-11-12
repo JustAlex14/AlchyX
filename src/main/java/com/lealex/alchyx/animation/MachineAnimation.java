@@ -13,16 +13,20 @@ import java.util.Optional;
  * {
  *   "machine": "alchymastery:destructuration_chamber",   (optional: the pattern id; default = this file's id)
  *   "replace": false,                                     (optional: true drops effects of earlier files for it)
+ *   "anchors": {"spot": [1, 2, 0]},                       (optional: more anchors, offsets from the core in the
+ *                                                          pattern's own frame; the pattern's own win on a clash)
  *   "effects": [ {"type": "sound", "when": "finish", "sound": "minecraft:block.grindstone.use"}, ... ]
  * }
  * </pre>
  * Several files may target the same machine (a datapack can add effects to a modded machine); their effects add up
  * unless one says "replace": true. See {@link Effect} for the effect kinds.
  */
-public record MachineAnimation(Optional<Identifier> machine, boolean replace, List<Effect> effects) {
+public record MachineAnimation(Optional<Identifier> machine, boolean replace, java.util.Map<String, net.minecraft.core.BlockPos> anchors,
+                               List<Effect> effects) {
     public static final Codec<MachineAnimation> CODEC = RecordCodecBuilder.create(instance -> instance.group(
             Identifier.CODEC.optionalFieldOf("machine").forGetter(MachineAnimation::machine),
             Codec.BOOL.optionalFieldOf("replace", false).forGetter(MachineAnimation::replace),
+            Codec.unboundedMap(Codec.STRING, net.minecraft.core.BlockPos.CODEC).optionalFieldOf("anchors", java.util.Map.of()).forGetter(MachineAnimation::anchors),
             Effect.CODEC.listOf().fieldOf("effects").forGetter(MachineAnimation::effects)
     ).apply(instance, MachineAnimation::new));
 }

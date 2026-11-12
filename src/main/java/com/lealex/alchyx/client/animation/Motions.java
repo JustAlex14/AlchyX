@@ -2,14 +2,17 @@ package com.lealex.alchyx.client.animation;
 
 import com.lealex.alchyx.animation.Effect;
 import com.lealex.alchyx.animation.Motion;
+import com.lealex.alchyx.animation.MotionSetup;
 import com.lealex.alchyx.animation.ResolvedAnimation;
 import com.lealex.alchyx.animation.StudioMark;
+import com.lealex.alchyx.animation.Trigger;
 import com.lealex.alchyx.block.ChamberShellBlock;
-import net.minecraft.world.level.block.state.BlockState;
 import com.lealex.alchyx.block.entity.MultiblockCoreBlockEntity;
 import com.lealex.alchyx.multiblock.FreeBuild;
 import com.lealex.alchyx.multiblock.MultiblockPattern;
 import net.minecraft.core.BlockPos;
+import net.minecraft.world.level.block.Rotation;
+import net.minecraft.world.level.block.state.BlockState;
 import org.jspecify.annotations.Nullable;
 
 import java.util.ArrayList;
@@ -20,57 +23,104 @@ import java.util.Optional;
 import java.util.WeakHashMap;
 
 /**
- * The animation a free-build machine plays (client): its file's effects, measured in the box its player recorded
- * (written as it stands in the world, so no turning), plus a looping block move for each motion its player gave a
- * part, plus the particles and figures at the anchors its player put. Built again only when the file, the shape or the motions change, so the engine keeps its runtime meanwhile.
+ * The animation a machine plays (client): its file's effects (unless the studio turned them off), plus what its
+ * players made with the Machine Studio: a block move or change for each motion a part was given, and the particles,
+ * figures, items, sounds and mod effects at its anchors. On a free-build machine they are measured in the box its
+ * player recorded (written as it stands in the world, so no turning); on a machine with a fixed shape they are turned
+ * back into the pattern's own frame, so the file's effects and the studio's play together. Built again only when the
+ * file, the shape or the studio's work change, so the engine keeps its runtime meanwhile.
  */
-final class Motions {
+public final class Motions {
     private Motions() {}
 
-    private record Cached(@Nullable ResolvedAnimation file, MultiblockPattern shape, int version, ResolvedAnimation resolved) {}
+    private record Cached(@Nullable ResolvedAnimation file, @Nullable MultiblockPattern shape, Rotation rotation, int version,
+                          @Nullable ResolvedAnimation resolved) {}
 
     private static final Map<MultiblockCoreBlockEntity, Cached> CACHE = new WeakHashMap<>();
 
-    /** What this core plays: {@code file} for a machine with a fixed shape (or none recorded yet). */
+    /** What the studio made for a machine: anchors (offsets in the pattern's own frame) and the effects using them. */
+    public record Layer(Map<String, BlockPos> anchors, List<Effect> effects) {}
+
+    /** What this core plays: {@code file}, with what its players made in the studio. */
     static @Nullable ResolvedAnimation resolve(MultiblockCoreBlockEntity core, @Nullable ResolvedAnimation file) {
-        MultiblockPattern shape = core.recordedShape();
+        MultiblockPattern recorded = core.recordedShape();
+        boolean studio = !core.motions().isEmpty() || !core.marks().isEmpty() || core.hidesFileAnimation();
+        if (recorded == null && !studio) return file;
+        MultiblockPattern shape = recorded != null ? recorded : core.pattern();
         if (shape == null) return file;
+        Rotation rotation = recorded != null ? Rotation.NONE : core.rotation();
         Cached cached = CACHE.get(core);
-        if (cached != null && cached.file() == file && cached.shape() == shape && cached.version() == core.motionsVersion()) {
+        if (cached != null && cached.file() == file && cached.shape() == shape && cached.rotation() == rotation
+                && cached.version() == core.motionsVersion()) {
             return cached.resolved();
         }
-        List<Effect> effects = new ArrayList<>(file == null ? List.of() : file.effects());
-        Map<String, BlockPos> anchors = new HashMap<>();
-        FreeBuild rules = core.freeBuild();
-        var when = rules == null ? com.lealex.alchyx.animation.Trigger.WORKING : rules.motionWhen();
+        Layer layer = layer(core, rotation);
+        List<Effect> effects = new ArrayList<>(file == null || (recorded == null && core.hidesFileAnimation()) ? List.of() : file.effects());
+        effects.addAll(layer.effects());
+        Map<String, BlockPos> anchors = new HashMap<>(file == null ? Map.of() : file.anchors());
+        anchors.putAll(layer.anchors());
+        ResolvedAnimation resolved;
+        if (effects.isEmpty()) {
+            resolved = null;
+        } else if (recorded != null) {
+            resolved = new ResolvedAnimation(core.patternId(), Optional.empty(), anchors, recorded.minOffset(), recorded.maxOffset(), List.copyOf(effects));
+        } else {
+            resolved = new ResolvedAnimation(core.patternId(), file != null ? file.front() : shape.front(), anchors,
+                    file != null ? file.boxMin() : shape.minOffset(), file != null ? file.boxMax() : shape.maxOffset(), List.copyOf(effects));
+        }
+        CACHE.put(core, new Cached(file, shape, rotation, core.motionsVersion(), resolved));
+        return resolved;
+    }
+
+    /**
+     * The studio's work on this core as effects: {@code rotation} is how the machine is turned in the world (its
+     * anchors are turned back by it, and so are figures' headings).
+     */
+    public static Layer layer(MultiblockCoreBlockEntity core, Rotation rotation) {
+        FreeBuild rules = core.studioRules();
+        return layer(core.getLevel(), core.getBlockPos(), core.motions(), core.setups(), core.marks(),
+                rules == null ? Trigger.WORKING : rules.motionWhen(), rotation);
+    }
+
+    /** The same from these motions, setups and anchors (offsets from the core at {@code corePos}, as in the world). */
+    public static Layer layer(net.minecraft.world.level.@Nullable Level level, BlockPos corePos, Map<BlockPos, Motion> motions,
+                              Map<BlockPos, MotionSetup> setups, java.util.Collection<StudioMark> marks, Trigger when, Rotation rotation) {
+        Rotation back = MultiblockPattern.inverse(rotation);
+        int turn = quarter(back) * 90;
+        List<Effect> effects = new ArrayList<>();
+        Map<String, BlockPos> anchors = new java.util.LinkedHashMap<>();
         int n = 0;
-        for (Map.Entry<BlockPos, Motion> entry : core.motions().entrySet()) {
+        for (Map.Entry<BlockPos, Motion> entry : motions.entrySet()) {
             String anchor = "alchyx_motion_" + n++;
-            BlockState look = core.getLevel() == null ? null
-                    : ChamberShellBlock.lookAt(core.getLevel(), core.getBlockPos().offset(entry.getKey()));
+            BlockState look = level == null ? null : ChamberShellBlock.lookAt(level, corePos.offset(entry.getKey()));
             Effect effect = look == null ? null : entry.getValue().effect(anchor, when, look,
-                    core.setups().getOrDefault(entry.getKey(), com.lealex.alchyx.animation.MotionSetup.ALWAYS));
+                    setups.getOrDefault(entry.getKey(), MotionSetup.ALWAYS));
             if (effect == null) continue;
-            anchors.put(anchor, entry.getKey());
+            anchors.put(anchor, entry.getKey().rotate(back));
             effects.add(effect);
         }
         n = 0;
-        for (StudioMark mark : core.marks()) {
+        for (StudioMark mark : marks) {
             String anchor = "alchyx_mark_" + n++;
             String toAnchor = mark.to().isPresent() ? anchor + "_to" : null;
-            List<Effect> made = mark.effects(anchor, toAnchor, when);
+            StudioMark turned = turn == 0 || (mark.kind() != StudioMark.Kind.FIGURE && mark.kind() != StudioMark.Kind.EFFECT)
+                    ? mark : mark.withYaw(Math.floorMod(mark.yaw() + turn, 360)); // (a heading in the pattern's frame)
+            List<Effect> made = turned.effects(anchor, toAnchor, when);
             if (made.isEmpty()) continue;
-            anchors.put(anchor, mark.offset());
-            if (toAnchor != null) anchors.put(toAnchor, mark.to().get());
+            anchors.put(anchor, mark.offset().rotate(back));
+            if (toAnchor != null) anchors.put(toAnchor, mark.to().get().rotate(back));
             effects.addAll(made);
         }
-        ResolvedAnimation resolved = effects.isEmpty() ? null : new ResolvedAnimation(core.patternId(), Optional.empty(), anchors,
-                shape.minOffset(), shape.maxOffset(), List.copyOf(effects));
-        if (resolved == null) {
-            CACHE.remove(core);
-            return null;
-        }
-        CACHE.put(core, new Cached(file, shape, core.motionsVersion(), resolved));
-        return resolved;
+        return new Layer(anchors, effects);
+    }
+
+    /** Quarter turns clockwise, 0 to 3. */
+    private static int quarter(Rotation rotation) {
+        return switch (rotation) {
+            case CLOCKWISE_90 -> 1;
+            case CLOCKWISE_180 -> 2;
+            case COUNTERCLOCKWISE_90 -> 3;
+            default -> 0;
+        };
     }
 }

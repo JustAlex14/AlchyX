@@ -991,7 +991,10 @@ public abstract class MultiblockCoreBlockEntity extends BlockEntity {
         if (level == null) return;
         MultiblockPattern pattern = pattern();
         if (pattern == null) return;
-        for (MultiblockPattern.Conversion conversion : pattern.conversions(worldPosition, rotation())) {
+        List<MultiblockPattern.Conversion> conversions = pattern.conversions(worldPosition, rotation());
+        // One block per tick, or more for a big build so it still forms in about 5 seconds (a factory of thousands)
+        int perTick = Math.max(1, conversions.size() / 100), done = 0;
+        for (MultiblockPattern.Conversion conversion : conversions) {
             BlockPos pos = conversion.pos();
             BlockState current = level.getBlockState(pos);
             if (!conversion.isDone(current) && !conversion.skipped(current)) {
@@ -1008,8 +1011,8 @@ public abstract class MultiblockCoreBlockEntity extends BlockEntity {
                     serverLevel.sendParticles(waveParticle(),
                             pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5, 12, 0.3, 0.3, 0.3, 0.05);
                 }
-                if (!quiet()) playSound(pos, SoundEvents.AMETHYST_BLOCK_CHIME, 0.6f, 0.8f + level.getRandom().nextFloat() * 0.4f);
-                return; // one block per tick
+                if (!quiet() && done == 0) playSound(pos, SoundEvents.AMETHYST_BLOCK_CHIME, 0.6f, 0.8f + level.getRandom().nextFloat() * 0.4f);
+                if (++done >= perTick) return; // (the rest on the next ticks)
             }
         }
 

@@ -115,7 +115,7 @@ Every block in the box is recorded exactly, turned the way it stands (facing, ax
 A machine with a fixed shape (AlchyMastery's, a KubeJS machine...) unlocks free building once its player has completed it one time: from then on, that core may stand in any build. To change it:
 
 1. Take one block of the standing machine out (it breaks, its parts turn back into their blocks).
-2. Build whatever you want around the core (any blocks, up to 7 x 7 x 7), mark two opposite corners with the Structure Recorder, then use the Recorder on the core: the shape is recorded and the machine forms from it, working as before.
+2. Build whatever you want around the core (any blocks, none required, up to 32 x 32 x 32: a whole factory), mark two opposite corners with the Structure Recorder, then use the Recorder on the core: the shape is recorded and the machine forms from it, working as before.
 3. **Sneak + use the Recorder on the core** forgets that shape: the machine needs its original shape again (it stays unlocked).
 
 The core remembers it was completed, also when it is broken and placed again. What was made in the studio for the old layout is cleared when a new shape is recorded. Machines kept out of the studio (`studioEditable()` false, or the `alchyx:studio_locked` tag) never unlock.

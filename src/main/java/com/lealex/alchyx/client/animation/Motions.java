@@ -133,7 +133,7 @@ public final class Motions {
         for (StudioMark mark : marks) {
             String anchor = "alchyx_mark_" + n++;
             String toAnchor = mark.to().isPresent() ? anchor + "_to" : null;
-            StudioMark turned = turn == 0 || (mark.kind() != StudioMark.Kind.FIGURE && mark.kind() != StudioMark.Kind.EFFECT)
+            StudioMark turned = turn == 0 || (mark.kind() != StudioMark.Kind.FIGURE && mark.kind() != StudioMark.Kind.EFFECT && mark.kind() != StudioMark.Kind.MINI)
                     ? mark : mark.withYaw(Math.floorMod(mark.yaw() + turn, 360)); // (a heading in the pattern's frame)
             List<Effect> made = turned.effects(anchor, toAnchor, when);
             if (made.isEmpty()) continue;

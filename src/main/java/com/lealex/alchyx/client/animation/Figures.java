@@ -17,7 +17,9 @@ public final class Figures {
         FIGURES.put(id, figure);
     }
 
+    /** The figure registered under this id; else a mini structure of that id (see {@link MiniFigure}), if there is one. */
     public static @Nullable CodedFigure get(Identifier id) {
-        return FIGURES.get(id);
+        CodedFigure figure = FIGURES.get(id);
+        return figure != null ? figure : MiniFigure.forId(id);
     }
 }

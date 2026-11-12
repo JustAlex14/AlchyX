@@ -54,7 +54,15 @@ public final class MachineStudio {
     public record Save(BlockPos core, Map<BlockPos, Motion> motions, Map<BlockPos, MotionSetup> setups, List<StudioMark> marks,
                        Map<BlockPos, net.minecraft.nbt.CompoundTag> data, boolean hideFile,
                        Map<BlockPos, com.lealex.alchyx.animation.BlockPose> poses,
-                       Map<BlockPos, net.minecraft.world.level.block.state.BlockState> added, List<BlockPos> removed) implements CustomPacketPayload {
+                       Map<BlockPos, net.minecraft.world.level.block.state.BlockState> added, List<BlockPos> removed,
+                       List<com.lealex.alchyx.animation.MiniStructure.Own> minis) implements CustomPacketPayload {
+        /** Without minis of its own. */
+        public Save(BlockPos core, Map<BlockPos, Motion> motions, Map<BlockPos, MotionSetup> setups, List<StudioMark> marks,
+                    Map<BlockPos, net.minecraft.nbt.CompoundTag> data, boolean hideFile, Map<BlockPos, com.lealex.alchyx.animation.BlockPose> poses,
+                    Map<BlockPos, net.minecraft.world.level.block.state.BlockState> added, List<BlockPos> removed) {
+            this(core, motions, setups, marks, data, hideFile, poses, added, removed, List.of());
+        }
+
         /** Without building (no block put in or taken out). */
         public Save(BlockPos core, Map<BlockPos, Motion> motions, Map<BlockPos, MotionSetup> setups, List<StudioMark> marks,
                     Map<BlockPos, net.minecraft.nbt.CompoundTag> data, boolean hideFile, Map<BlockPos, com.lealex.alchyx.animation.BlockPose> poses) {
@@ -91,6 +99,8 @@ public final class MachineStudio {
                     });
                     buf.writeVarInt(save.removed().size());
                     for (BlockPos offset : save.removed()) BlockPos.STREAM_CODEC.encode(buf, offset);
+                    buf.writeVarInt(save.minis().size());
+                    for (com.lealex.alchyx.animation.MiniStructure.Own own : save.minis()) com.lealex.alchyx.animation.MiniStructure.Own.STREAM_CODEC.encode(buf, own);
                 },
                 buf -> {
                     BlockPos core = BlockPos.STREAM_CODEC.decode(buf);
@@ -137,7 +147,11 @@ public final class MachineStudio {
                     if (removedCount < 0 || removedCount > MAX_MOTIONS) throw new IllegalArgumentException("Too many blocks: " + removedCount);
                     List<BlockPos> removed = new ArrayList<>();
                     for (int i = 0; i < removedCount; i++) removed.add(BlockPos.STREAM_CODEC.decode(buf));
-                    return new Save(core, motions, setups, marks, data, hideFile, poses, added, removed);
+                    int miniCount = buf.readVarInt();
+                    if (miniCount < 0 || miniCount > com.lealex.alchyx.animation.MiniStructure.MAX_OWN) throw new IllegalArgumentException("Too many minis: " + miniCount);
+                    List<com.lealex.alchyx.animation.MiniStructure.Own> minis = new ArrayList<>();
+                    for (int i = 0; i < miniCount; i++) minis.add(com.lealex.alchyx.animation.MiniStructure.Own.STREAM_CODEC.decode(buf));
+                    return new Save(core, motions, setups, marks, data, hideFile, poses, added, removed, minis);
                 });
 
         @Override
@@ -175,6 +189,7 @@ public final class MachineStudio {
                 return;
             }
         }
+        core.setOwnMinis(save.minis());
         int kept = core.setStudio(save.motions(), save.setups(), save.marks(), save.hideFile(), save.poses());
         if (kept < 0) return;
         int dropped = save.motions().size() + save.marks().size() + save.poses().size() - kept;

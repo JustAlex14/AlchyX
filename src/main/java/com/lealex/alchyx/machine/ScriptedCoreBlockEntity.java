@@ -52,6 +52,8 @@ public class ScriptedCoreBlockEntity extends MultiblockCoreBlockEntity implement
 
     private @Nullable Identifier currentRecipe;
     private int progress = 0;
+    private float speed = 1.0F;   // how fast recipes go (scripts set it: a heat lamp, an upgrade...)
+    private float pace;           // a part of a step, at speeds that aren't whole
     private boolean lookupDirty = true;   // inputs changed: look for a recipe again
     private boolean resultByScript;        // a script set the "result" display as the operation started: keep it
     private int lookupGeneration = -1;
@@ -195,15 +197,23 @@ public class ScriptedCoreBlockEntity extends MultiblockCoreBlockEntity implement
             setAnimationWorking(false);
             return;
         }
+        pace += speed;
+        int steps = Math.min((int) pace, recipe.time() - progress);
+        if (steps <= 0) { // (slower than one step a tick: this tick only gathers pace)
+            setAnimationWorking(true);
+            return;
+        }
         if (spec.usesEnergy() && recipe.energy() > 0) {
-            long needed = (long) recipe.energy() * (progress + 1) / recipe.time() - (long) recipe.energy() * progress / recipe.time();
+            long needed = (long) recipe.energy() * (progress + steps) / recipe.time() - (long) recipe.energy() * progress / recipe.time();
             if (energy.getAmountAsLong() < needed) {
+                pace = Math.min(pace, 1.0F);
                 setAnimationWorking(false); // wait for power
                 return;
             }
             energy.set((int) (energy.getAmountAsLong() - needed));
         }
-        progress++;
+        pace -= steps;
+        progress += steps;
         setAnimationWorking(true);
         if (progress >= recipe.time()) finish(recipe);
         setChanged();
@@ -220,7 +230,8 @@ public class ScriptedCoreBlockEntity extends MultiblockCoreBlockEntity implement
             if (!MachineHooks.get().starting(this, entry.getKey())) return;
             currentRecipe = entry.getKey();
             progress = 0;
-            startAnimationOperation(recipe.time());
+            pace = 0;
+            startAnimationOperation(timeAtSpeed(recipe));
             if (!resultByScript) setAnimationDisplay("result", recipe.outputs().isEmpty() ? ItemStack.EMPTY : recipe.outputs().getFirst().toStack());
             resultByScript = false;
             setChanged();
@@ -474,6 +485,29 @@ public class ScriptedCoreBlockEntity extends MultiblockCoreBlockEntity implement
         return currentRecipe;
     }
 
+    /**
+     * Makes recipes go {@code speed} times as fast (2: twice as fast, 0.5: half). A heat lamp, a speed upgrade, a
+     * catalyst: a script sets it, e.g. each tick from what's in a slot. The machine's animation, and the mini
+     * structures timed on it, follow: the operation under way plays its rest at the new pace.
+     */
+    public void setSpeed(float speed) {
+        speed = Math.max(0.05F, Math.min(64.0F, speed));
+        if (speed == this.speed) return;
+        this.speed = speed;
+        MachineRecipe recipe = recipe();
+        if (recipe != null) retimeAnimationOperation(timeAtSpeed(recipe));
+        setChanged();
+    }
+
+    public float getSpeed() {
+        return speed;
+    }
+
+    /** How long a recipe takes at this speed, in ticks. */
+    private int timeAtSpeed(MachineRecipe recipe) {
+        return Math.max(1, (int) Math.ceil(recipe.time() / speed));
+    }
+
     public int getProgress() {
         return progress;
     }
@@ -527,6 +561,7 @@ public class ScriptedCoreBlockEntity extends MultiblockCoreBlockEntity implement
         energy.serialize(output.child("energy"));
         if (currentRecipe != null) output.store("recipe", Identifier.CODEC, currentRecipe);
         output.putInt("progress", progress);
+        if (speed != 1.0F) output.putFloat("speed", speed);
     }
 
     @Override
@@ -537,6 +572,7 @@ public class ScriptedCoreBlockEntity extends MultiblockCoreBlockEntity implement
         energy.deserialize(input.childOrEmpty("energy"));
         currentRecipe = input.read("recipe", Identifier.CODEC).orElse(null);
         progress = input.getIntOr("progress", 0);
+        speed = input.getFloatOr("speed", 1.0F);
         lookupDirty = true;
     }
 

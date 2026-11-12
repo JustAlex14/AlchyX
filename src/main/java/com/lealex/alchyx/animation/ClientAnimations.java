@@ -25,6 +25,23 @@ public final class ClientAnimations {
         return animations.get(machine);
     }
 
+    private static volatile Map<Identifier, MiniStructure.File> minis = Map.of();
+
+    public static void setMinis(Map<Identifier, MiniStructure.File> files) {
+        minis = Map.copyOf(files);
+        generation++;
+    }
+
+    /** A mini structure file the server sent, by id. */
+    public static MiniStructure.@Nullable File mini(Identifier id) {
+        return minis.get(id);
+    }
+
+    /** Every mini structure file the server sent. */
+    public static Map<Identifier, MiniStructure.File> minis() {
+        return minis;
+    }
+
     /** Bumps whenever new definitions arrive (cached per-machine state is reset). */
     public static int generation() {
         return generation;

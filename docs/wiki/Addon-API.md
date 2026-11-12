@@ -109,6 +109,14 @@ a studio motion.
   disguised as your block uses Strike. Vanilla pistons are built in.
 - **Legacy parts**: `AlchyXApi.registerLegacyPart(predicate)` lets formed machines accept blocks an older version of your mod placed as parts, and turns them into shells on the next check.
 
+## Mini structures
+
+A mini is drawn as a coded figure, so anything that draws figures can show one: `Figures.get(id)` returns the
+mini's figure for a multiblock id, a `machine_mini` file id, or a machine's own (`MiniStructure.ownId(n)`). It times
+itself on the owner it is drawn for: a `MultiblockCoreBlockEntity` (its operation, progress and
+`getAnimationOperationTicks()`), or anything implementing `client.animation.MiniHost` (a preview, a screen). A machine
+whose recipes change pace mid-operation calls `retimeAnimationOperation(ticks)` so the minis follow.
+
 ## Checklist for an addon
 
 1. Server and client: one `StudioMotions.register` per new move.

@@ -185,9 +185,13 @@ For the machine's animation, `event.machine` also has:
 - `setPartData(anchor, nbt)` / `getPartData(anchor)`: any block data a part shows (a sign's text, a banner's
   patterns...). Only drawn: the real block gets its own data back when the machine breaks.
 - `getAnchorPos(anchor)`: where a named anchor is in the world.
+- `setSpeed(n)` / `getSpeed()`: how fast recipes go (2: twice as fast). Set it from `tick` (a heat slot, an upgrade
+  you check yourself). The animation, and the mini structures timed on the machine, follow it, even in the middle
+  of an operation.
 
 The [Egg Hatchery example](../examples/egg-hatchery/README.md) picks a random spawn egg as the work starts, shows
-its mob in the spawner and the egg floating, then gives that same egg.
+its mob in the spawner and the egg floating, then gives that same egg; blaze powder in its heat slot speeds it up
+(`setSpeed`), and two mini structures on its roof follow.
 
 ## 6. A guide book page (optional, needs Patchouli)
 

@@ -65,7 +65,7 @@ import java.util.Set;
  * Drag to turn the view, the wheel to zoom, the layer buttons to look inside. Play shows it all as it will look;
  * Save sends it to the machine (nothing changes before).
  */
-public class StudioScreen extends Screen {
+public class StudioScreen extends Screen implements com.lealex.alchyx.client.animation.MiniHost {
     private static final int PANEL_WIDE = 150, MARGIN = 8, TOP = 22, BAR = 30, ROW = 20, LIST_TOP = TOP + 64;
     private static final int BACK = 0xE0101018, VIEW_BACK = 0xFF1A1A26, EDGE = 0xFF3C3550, ACCENT = 0xFFD9A7FF, TEXT = 0xFFE8E4F0,
             FAINT = 0xFF9A93AA, WARN = 0xFFFFB866, GOOD = 0xFF8BE39B;
@@ -106,6 +106,8 @@ public class StudioScreen extends Screen {
     private final Map<BlockPos, net.minecraft.nbt.CompoundTag> dataEdits = new LinkedHashMap<>(); // block data changed here (box coordinates)
     private final Map<BlockPos, StudioMark> marks = new LinkedHashMap<>();     // the anchors as changed here (box coordinates)
     private final Map<BlockPos, StudioMark> savedMarks = new LinkedHashMap<>();
+    private final List<com.lealex.alchyx.animation.MiniStructure.Own> minis = new ArrayList<>();      // minis of its own, as changed here
+    private final List<com.lealex.alchyx.animation.MiniStructure.Own> savedMinis = new ArrayList<>();
     private final Map<BlockPos, BlockPose> poses = new LinkedHashMap<>();      // how the Shape tab reshaped blocks (box coordinates)
     private final Map<BlockPos, BlockPose> savedPoses = new LinkedHashMap<>();
     private final Set<BlockPos> chosen = new LinkedHashSet<>();
@@ -137,7 +139,7 @@ public class StudioScreen extends Screen {
     private @Nullable Button particlesButton, figureButton, itemButton, soundButton, removeButton, previousButton, nextButton, turnButton;
     private @Nullable Button appearButton, vanishButton, leaveButton, arriveButton, alwaysButton, pickItemsButton;
     private final List<Button> blockButtons = new ArrayList<>(); // Blocks tab: when the chosen blocks' motion plays, a change's state
-    private @Nullable Button startButton, stopButton, wholeButton, stateButton, dataButton, effectButton;
+    private @Nullable Button startButton, stopButton, wholeButton, stateButton, dataButton, effectButton, miniButton;
     private int motionRows;                // rows of motion buttons (Blocks tab)
     private static final int ICONS_PER_ROW = 7;
 
@@ -182,6 +184,8 @@ public class StudioScreen extends Screen {
             savedMarks.put(at, mark.shifted(BlockPos.ZERO.subtract(min)));
         }
         marks.putAll(savedMarks);
+        savedMinis.addAll(core.ownMinis());
+        minis.addAll(savedMinis);
         core.poses().forEach((offset, pose) -> savedPoses.put(offset.subtract(min), pose));
         poses.putAll(savedPoses);
         looks.forEach((cell, look) -> builtFrom.put(cell.offset(min), look));
@@ -381,7 +385,7 @@ public class StudioScreen extends Screen {
 
         // Anchors: what plays at the spot
         py = LIST_TOP;
-        int quarter = (wide - 8) / 5;
+        int quarter = (wide - 10) / 6;
         particlesButton = addRenderableWidget(Button.builder(Component.literal("Fx"), b -> putMark(StudioMark.Kind.PARTICLES))
                 .bounds(px, py, quarter, 18).build());
         particlesButton.setTooltip(Tooltip.create(Component.literal("Particles rise here: smoke, flames, glyphs...")));
@@ -394,7 +398,10 @@ public class StudioScreen extends Screen {
         soundButton = addRenderableWidget(Button.builder(Component.literal("Snd"), b -> putMark(StudioMark.Kind.SOUND))
                 .bounds(px + 3 * (quarter + 2), py, quarter, 18).build());
         effectButton = addRenderableWidget(Button.builder(Component.literal("Mod"), b -> putMark(StudioMark.Kind.EFFECT))
-                .bounds(px + 4 * (quarter + 2), py, wide - 4 * (quarter + 2), 18).build());
+                .bounds(px + 4 * (quarter + 2), py, quarter, 18).build());
+        miniButton = addRenderableWidget(Button.builder(Component.literal("Mini"), b -> openMinis())
+                .bounds(px + 5 * (quarter + 2), py, wide - 5 * (quarter + 2), 18).build());
+        miniButton.setTooltip(Tooltip.create(Component.literal("A mini structure stands here: a multiblock that already exists, or one you build. It plays its animation timed on this machine's recipe")));
         effectButton.setTooltip(Tooltip.create(Component.literal("An effect a mod draws here: a rift portal, a sigil... (from the mods that add some)")));
         soundButton.setTooltip(Tooltip.create(Component.literal("A sound plays here as the work reaches its start (the timeline)")));
         py += ROW;
@@ -423,7 +430,7 @@ public class StudioScreen extends Screen {
         py += ROW;
         pickItemsButton = addRenderableWidget(Button.builder(Component.literal("Items..."), b -> pickItems()).bounds(px, py, wide, 18).build());
         pickItemsButton.setTooltip(Tooltip.create(Component.literal("Its items, each with its own time and way of moving: any item, modded ones too, or a display")));
-        anchorButtons.addAll(List.of(particlesButton, figureButton, itemButton, soundButton, effectButton, previousButton, nextButton, turnButton, removeButton,
+        anchorButtons.addAll(List.of(particlesButton, figureButton, itemButton, soundButton, effectButton, miniButton, previousButton, nextButton, turnButton, removeButton,
                 appearButton, vanishButton, leaveButton, arriveButton, alwaysButton, pickItemsButton));
         refreshButtons();
     }
@@ -672,7 +679,7 @@ public class StudioScreen extends Screen {
 
     private boolean changed() {
         return !edits.equals(saved) || !setups.equals(savedSetups) || !marks.equals(savedMarks) || !dataEdits.isEmpty()
-                || hideFile != savedHideFile || !poses.equals(savedPoses) || buildChanged();
+                || hideFile != savedHideFile || !poses.equals(savedPoses) || buildChanged() || !minis.equals(savedMinis);
     }
 
     private void refreshButtons() {
@@ -763,17 +770,21 @@ public class StudioScreen extends Screen {
                 && (mark == null || mark.kind() != StudioMark.Kind.SOUND) && (mark != null || marks.size() < StudioMark.MAX);
         if (effectButton != null) effectButton.active = spot != null && !choicesFor(StudioMark.Kind.EFFECT).isEmpty()
                 && (mark == null || mark.kind() != StudioMark.Kind.EFFECT) && (mark != null || marks.size() < StudioMark.MAX);
+        if (miniButton != null) miniButton.active = spot != null && (mark != null || marks.size() < StudioMark.MAX);
         if (previousButton != null) previousButton.active = mark != null;
         if (nextButton != null) nextButton.active = mark != null;
         if (removeButton != null) removeButton.active = mark != null;
         if (pickItemsButton != null) {
             boolean sound = mark != null && mark.kind() == StudioMark.Kind.SOUND;
             boolean figure = mark != null && mark.kind() == StudioMark.Kind.FIGURE;
+            boolean mini = mark != null && mark.kind() == StudioMark.Kind.MINI;
             pickItemsButton.active = spot != null && (mark == null ? marks.size() < StudioMark.MAX
-                    : mark.kind() == StudioMark.Kind.ITEM || sound || figure);
+                    : mark.kind() == StudioMark.Kind.ITEM || sound || figure || mini);
             pickItemsButton.setMessage(Component.literal(sound ? "Pick sound..." : figure
-                    ? "Action: " + (pickingTo ? "walk to (pick spot)" : actionName(mark)) : "Items..."));
-            pickItemsButton.setTooltip(Tooltip.create(Component.literal(figure
+                    ? "Action: " + (pickingTo ? "walk to (pick spot)" : actionName(mark))
+                    : mini ? "Size: " + String.format(Locale.ROOT, "%.3f", mark.size()).replaceAll("0+$", "") + " block" : "Items..."));
+            pickItemsButton.setTooltip(Tooltip.create(Component.literal(mini
+                    ? "How big one of its blocks is, in blocks of this machine. Click: bigger (Shift: smaller)" : figure
                     ? "What the mob does: stands still, walks (in place, or to a spot you click next, through its show time), swings an arm, flaps its wings, hops or spins. Click: next"
                     : "Its items, each with its own time and way of moving: any item, modded ones too, or a display")));
         }
@@ -963,6 +974,7 @@ public class StudioScreen extends Screen {
                 }
             }
             case ITEM -> usable.addAll(StudioMark.DISPLAYS);
+            case MINI -> usable.addAll(miniChoices());
             case SOUND -> usable.addAll(soundIds());
             case PARTICLES -> {
                 for (Identifier id : rules.particles()) if (StudioMark.particle(id) != null) usable.add(id.toString());
@@ -1016,6 +1028,142 @@ public class StudioScreen extends Screen {
         pickingTo = false;
         marks.put(spot, new StudioMark(spot, kind, choices.getFirst(), 0));
         refreshButtons();
+    }
+
+    // ---- Mini structures: a multiblock (or a mini file) shown small at an anchor, or one built here ----
+
+    /** Every mini an anchor can show: this machine's own ("#0"...), then the mini files and the multiblocks, by id. */
+    private List<String> miniChoices() {
+        List<String> choices = new ArrayList<>();
+        for (int i = 0; i < minis.size(); i++) choices.add("#" + i);
+        java.util.TreeSet<String> ids = new java.util.TreeSet<>();
+        com.lealex.alchyx.animation.ClientAnimations.minis().keySet().forEach(id -> ids.add(id.toString()));
+        com.lealex.alchyx.multiblock.MultiblockPatterns.client().keySet().forEach(id -> ids.add(id.toString()));
+        choices.addAll(ids);
+        return choices;
+    }
+
+    private String miniName(String what) {
+        if (what.startsWith("#")) {
+            try {
+                int index = Integer.parseInt(what.substring(1));
+                return index >= 0 && index < minis.size() ? minis.get(index).name() + " (built here)" : "a mini that's gone";
+            } catch (NumberFormatException e) {
+                return what;
+            }
+        }
+        Identifier id = Identifier.tryParse(what);
+        if (id == null) return what;
+        com.lealex.alchyx.animation.MiniStructure.File file = com.lealex.alchyx.animation.ClientAnimations.mini(id);
+        if (file != null && file.name().isPresent()) return file.name().get();
+        return id.getPath().replace('_', ' ');
+    }
+
+    /** Puts a mini at the chosen spot (in place of what is there). */
+    private void putMini(BlockPos at, String what, float size) {
+        StudioMark now = marks.get(at);
+        if (now == null && marks.size() >= StudioMark.MAX) return;
+        StudioMark mark = now != null && now.kind() == StudioMark.Kind.MINI ? now.withWhat(what)
+                : new StudioMark(at, StudioMark.Kind.MINI, what, 0);
+        marks.put(at, mark.withSize(size));
+        pickingTo = false;
+        refreshButtons();
+    }
+
+    /** The "Mini" button: import a multiblock (or a mini file), build a new mini, or change one built here. */
+    private void openMinis() {
+        if (spot == null) return;
+        BlockPos at = spot;
+        StudioMark now = marks.get(at);
+        float size = now != null && now.kind() == StudioMark.Kind.MINI ? now.size() : 0.25F;
+        List<ChoiceScreen.Choice> choices = new ArrayList<>();
+        List<String> imported = new ArrayList<>(miniChoices());
+        imported.removeIf(id -> id.startsWith("#"));
+        choices.add(new ChoiceScreen.Choice("Import a multiblock...", "Any multiblock that already exists (and the mini files of datapacks): it shows with its own animation, nothing to build",
+                () -> minecraft.setScreen(new IdPickerScreen(this, "Pick a multiblock", imported,
+                        now != null && now.kind() == StudioMark.Kind.MINI ? now.what() : null, null, id -> {
+                            Identifier parsed = Identifier.tryParse(id);
+                            com.lealex.alchyx.animation.MiniStructure.File file = parsed == null ? null : com.lealex.alchyx.animation.ClientAnimations.mini(parsed);
+                            putMini(at, id, now != null && now.kind() == StudioMark.Kind.MINI ? size : file != null ? file.size() : 0.25F);
+                        }))));
+        if (minis.size() < com.lealex.alchyx.animation.MiniStructure.MAX_OWN) {
+            choices.add(new ChoiceScreen.Choice("Build a new mini...", "Build one block by block, and give its blocks motions. This machine keeps it",
+                    () -> {
+                        com.lealex.alchyx.animation.MiniStructure.Own start = new com.lealex.alchyx.animation.MiniStructure.Own("Mini " + (minis.size() + 1),
+                                Map.of(BlockPos.ZERO, Blocks.STONE.defaultBlockState()), Map.of());
+                        minecraft.setScreen(new MiniBuildScreen(this, start, own -> {
+                            if (minis.size() >= com.lealex.alchyx.animation.MiniStructure.MAX_OWN) return;
+                            minis.add(own);
+                            putMini(at, "#" + (minis.size() - 1), size);
+                        }, null));
+                    }));
+        }
+        for (int i = 0; i < minis.size(); i++) {
+            int index = i;
+            com.lealex.alchyx.animation.MiniStructure.Own own = minis.get(i);
+            choices.add(new ChoiceScreen.Choice("Built here: " + own.name() + "...", "Change it (it shows here once you're done)",
+                    () -> minecraft.setScreen(new MiniBuildScreen(this, own, changed -> {
+                        if (index >= minis.size()) return;
+                        minis.set(index, changed);
+                        putMini(at, "#" + index, size);
+                    }, () -> deleteMini(index)))));
+        }
+        minecraft.setScreen(new ChoiceScreen(this, "Mini structure", "A small machine standing at this spot, timed on this one's recipe", choices));
+    }
+
+    /** Takes a mini built here away, with the anchors showing it; the ones after it move up one. */
+    private void deleteMini(int index) {
+        if (index < 0 || index >= minis.size()) return;
+        minis.remove(index);
+        Map<BlockPos, StudioMark> kept = new LinkedHashMap<>();
+        marks.forEach((at, mark) -> {
+            if (mark.kind() == StudioMark.Kind.MINI && mark.what().startsWith("#")) {
+                int n;
+                try {
+                    n = Integer.parseInt(mark.what().substring(1));
+                } catch (NumberFormatException e) {
+                    return;
+                }
+                if (n == index) return;
+                if (n > index) mark = mark.withWhat("#" + (n - 1));
+            }
+            kept.put(at, mark);
+        });
+        marks.clear();
+        marks.putAll(kept);
+        refreshButtons();
+    }
+
+    // ---- What the minis here are timed on: the preview's pretend work ----
+
+    @Override
+    public boolean miniWorking() {
+        return playing;
+    }
+
+    @Override
+    public float miniProgress(float time) {
+        return progress(0);
+    }
+
+    @Override
+    public long miniOperationStart() {
+        return (long) Math.floor(clock / OPERATION);
+    }
+
+    @Override
+    public int miniOperations() {
+        return (int) Math.floor(clock / OPERATION);
+    }
+
+    @Override
+    public int miniOperationTicks() {
+        return OPERATION;
+    }
+
+    @Override
+    public List<com.lealex.alchyx.animation.MiniStructure.Own> miniOwn() {
+        return minis;
     }
 
     private void cycleMark(int step) {
@@ -1075,6 +1223,15 @@ public class StudioScreen extends Screen {
         }
         if (mark != null && mark.kind() == StudioMark.Kind.FIGURE) {
             nextAction(at, mark);
+            return;
+        }
+        if (mark != null && mark.kind() == StudioMark.Kind.MINI) { // its size
+            List<Float> sizes = com.lealex.alchyx.animation.MiniStructure.SIZES;
+            int index = 0;
+            for (int i = 0; i < sizes.size(); i++) if (Math.abs(sizes.get(i) - mark.size()) < 1e-3) index = i;
+            index = Math.floorMod(index + (Minecraft.getInstance().hasShiftDown() ? -1 : 1), sizes.size());
+            marks.put(at, mark.withSize(sizes.get(index)));
+            refreshButtons();
             return;
         }
         if (mark != null && mark.kind() != StudioMark.Kind.ITEM) return;
@@ -1160,7 +1317,9 @@ public class StudioScreen extends Screen {
         for (BlockPos offset : builtFrom.keySet()) if (!looks.containsKey(offset.subtract(min))) removed.add(offset);
         rebuilding = !added.isEmpty() || !removed.isEmpty();
         connection.send(new ServerboundCustomPayloadPacket(new MachineStudio.Save(corePos, motions, timings, sent, data, hideFile, shaped,
-                added, removed)));
+                added, removed, List.copyOf(minis))));
+        savedMinis.clear();
+        savedMinis.addAll(minis);
         dataEdits.clear();
         saved.clear();
         saved.putAll(edits);
@@ -1193,9 +1352,22 @@ public class StudioScreen extends Screen {
         for (StudioMark mark : marks.values()) sent.add(mark.shifted(min));
         Map<BlockPos, BlockPose> shaped = new LinkedHashMap<>();
         poses.forEach((cell, pose) -> shaped.put(cell.offset(min), pose));
-        com.lealex.alchyx.client.animation.Motions.Layer layer = com.lealex.alchyx.client.animation.Motions.layer(minecraft.level, corePos,
-                motions, timings, sent, shaped, rules.motionWhen(), core.rotation());
         Identifier machine = core.patternId();
+        // Minis built here go out as mini files beside it (machine_mini/), and the anchors name those files
+        List<Identifier> miniIds = new ArrayList<>();
+        for (int i = 0; i < minis.size(); i++) miniIds.add(Identifier.fromNamespaceAndPath(machine.getNamespace(), machine.getPath() + "_mini_" + i));
+        List<StudioMark> layered = new ArrayList<>();
+        for (StudioMark mark : sent) {
+            if (mark.kind() == StudioMark.Kind.MINI && mark.what().startsWith("#")) {
+                Identifier own = com.lealex.alchyx.animation.MiniStructure.figureFor(mark.what());
+                int index = own == null ? -1 : com.lealex.alchyx.animation.MiniStructure.ownIndex(own);
+                if (index < 0 || index >= miniIds.size()) continue;
+                mark = mark.withWhat(miniIds.get(index).toString());
+            }
+            layered.add(mark);
+        }
+        com.lealex.alchyx.client.animation.Motions.Layer layer = com.lealex.alchyx.client.animation.Motions.layer(minecraft.level, corePos,
+                motions, timings, layered, shaped, rules.motionWhen(), core.rotation());
         com.lealex.alchyx.animation.MachineAnimation file = new com.lealex.alchyx.animation.MachineAnimation(java.util.Optional.of(machine),
                 hideFile, layer.anchors(), layer.effects());
         String message;
@@ -1208,14 +1380,21 @@ public class StudioScreen extends Screen {
                     timings.getOrDefault(offset, MotionSetup.ALWAYS))));
             List<com.lealex.alchyx.animation.StudioSave.Posed> posedList = new ArrayList<>();
             shaped.forEach((offset, pose) -> posedList.add(new com.lealex.alchyx.animation.StudioSave.Posed(offset, pose)));
-            com.lealex.alchyx.animation.StudioSave studio = new com.lealex.alchyx.animation.StudioSave(moving, sent, hideFile, posedList)
-                    .turned(MultiblockPattern.inverse(core.rotation()));
+            com.lealex.alchyx.animation.StudioSave studio = new com.lealex.alchyx.animation.StudioSave(moving, sent, hideFile, posedList,
+                    List.copyOf(minis)).turned(MultiblockPattern.inverse(core.rotation()));
             json.getAsJsonObject().add("alchyx_studio", com.lealex.alchyx.animation.StudioSave.CODEC
                     .encodeStart(com.mojang.serialization.JsonOps.INSTANCE, studio).getOrThrow());
             java.nio.file.Files.createDirectories(path.getParent());
             java.nio.file.Files.writeString(path, new com.google.gson.GsonBuilder().setPrettyPrinting().create().toJson(json));
+            for (int i = 0; i < minis.size(); i++) {
+                java.nio.file.Path miniPath = exportRoot().resolve(machine.getNamespace()).resolve("machine_mini").resolve(miniIds.get(i).getPath() + ".json");
+                java.nio.file.Files.createDirectories(miniPath.getParent());
+                java.nio.file.Files.writeString(miniPath, new com.google.gson.GsonBuilder().setPrettyPrinting().create().toJson(
+                        com.lealex.alchyx.animation.MiniStructure.File.CODEC.encodeStart(com.mojang.serialization.JsonOps.INSTANCE, minis.get(i).file()).getOrThrow()));
+            }
             message = "Exported to " + minecraft.gameDirectory.toPath().relativize(path).toString().replace('\\', '/')
-                    + " (put it in a datapack: data/" + machine.getNamespace() + "/machine_animation/)";
+                    + " (put it in a datapack: data/" + machine.getNamespace() + "/machine_animation/"
+                    + (minis.isEmpty() ? ")" : ", and its " + minis.size() + " mini file(s) from machine_mini/ in data/" + machine.getNamespace() + "/machine_mini/)");
         } catch (Exception e) {
             AlchyX.LOGGER.warn("AlchyX: studio export failed", e);
             message = "Couldn't export: " + e.getMessage();
@@ -1277,6 +1456,10 @@ public class StudioScreen extends Screen {
                         }
                         edits.put(cell, moving.motion());
                         putSetup(cell, moving.setup().tidy(moving.motion(), look));
+                    }
+                    minis.clear();
+                    for (com.lealex.alchyx.animation.MiniStructure.Own own : studio.minis()) {
+                        if (minis.size() < com.lealex.alchyx.animation.MiniStructure.MAX_OWN) minis.add(own);
                     }
                     marks.clear();
                     for (StudioMark mark : studio.marks()) {
@@ -1823,11 +2006,12 @@ public class StudioScreen extends Screen {
         return says;
     }
 
-    private static String markName(StudioMark mark) {
+    private String markName(StudioMark mark) {
         return mark.kind().getSerializedName() + ", " + shortName(mark);
     }
 
-    private static String shortName(StudioMark mark) {
+    private String shortName(StudioMark mark) {
+        if (mark.kind() == StudioMark.Kind.MINI) return miniName(mark.what());
         Identifier id = mark.kind() == StudioMark.Kind.ITEM ? null : mark.id();
         if (mark.kind() == StudioMark.Kind.SOUND && id != null) {
             return id.getPath().replace('_', ' ') + (mark.yaw() == 0 ? "" : ", every " + seconds100(mark.yaw()));
@@ -2304,15 +2488,16 @@ public class StudioScreen extends Screen {
         List<StudioRenderState.CodedPiece> list = new ArrayList<>();
         Vec3 lit = Minecraft.getInstance().player == null ? Vec3.ZERO : Minecraft.getInstance().player.position();
         for (StudioMark mark : marks.values()) {
-            if (mark.kind() != StudioMark.Kind.EFFECT || mark.offset().getY() > top || !mark.times().shows(progress(partialTicks))) continue;
-            Identifier id = mark.id();
+            boolean mini = mark.kind() == StudioMark.Kind.MINI;
+            if ((mark.kind() != StudioMark.Kind.EFFECT && !mini) || mark.offset().getY() > top || !mark.times().shows(progress(partialTicks))) continue;
+            Identifier id = mini ? com.lealex.alchyx.animation.MiniStructure.figureFor(mark.what()) : mark.id();
             com.lealex.alchyx.client.animation.CodedFigure figure = id == null ? null : com.lealex.alchyx.client.animation.Figures.get(id);
             if (figure == null) continue;
             com.lealex.alchyx.client.animation.CodedFigure.Context context = new com.lealex.alchyx.client.animation.CodedFigure.Context(
                     net.minecraft.world.item.ItemStack.EMPTY, playing, clock + (playing ? partialTicks : 0),
-                    net.minecraft.util.LightCoordsUtil.FULL_BRIGHT, this, lit, mark.yaw(), partialTicks);
+                    net.minecraft.util.LightCoordsUtil.FULL_BRIGHT, this, lit, mark.yaw(), partialTicks, mini ? mark.size() : 1.0F);
             list.add(new StudioRenderState.CodedPiece(new com.lealex.alchyx.client.animation.FigureDrawer.Prepared(null, figure, context,
-                    mark.yaw(), 1.0F, 0.0F), new Vec3(mark.offset().getX() + 0.5, mark.offset().getY(), mark.offset().getZ() + 0.5)));
+                    mark.yaw(), mini ? mark.size() : 1.0F, 0.0F), new Vec3(mark.offset().getX() + 0.5, mark.offset().getY(), mark.offset().getZ() + 0.5)));
         }
         return list;
     }

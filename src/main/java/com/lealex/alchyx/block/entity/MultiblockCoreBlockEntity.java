@@ -143,6 +143,27 @@ public abstract class MultiblockCoreBlockEntity extends BlockEntity {
         syncToClients();
     }
 
+    /**
+     * The operation under way now takes {@code ticks} in all (a speed upgrade went in or out): it keeps how far it
+     * is, and the rest of it plays at the new pace (as do the mini structures timed on it).
+     */
+    protected void retimeAnimationOperation(int ticks) {
+        if (level == null || animOpStart == Long.MIN_VALUE || animOpTicks <= 0) return;
+        ticks = Math.max(1, ticks);
+        if (ticks == animOpTicks) return;
+        long now = level.getGameTime();
+        float done = getAnimationProgress(now);
+        animOpTicks = ticks;
+        animOpStart = now - Math.round(done * ticks);
+        setChanged();
+        syncToClients();
+    }
+
+    /** How long the operation under way lasts in all, in ticks (0 before the first). */
+    public int getAnimationOperationTicks() {
+        return animOpTicks;
+    }
+
     /** An operation just finished ("when": "finish"). */
     protected void finishAnimationOperation() {
         animOpCount++;
@@ -634,6 +655,7 @@ public abstract class MultiblockCoreBlockEntity extends BlockEntity {
     private final Map<BlockPos, com.lealex.alchyx.animation.MotionSetup> setups = new java.util.LinkedHashMap<>(); // a motion's times and state (studio)
     private final List<com.lealex.alchyx.animation.StudioMark> marks = new ArrayList<>(); // anchors: particles, figures
     private final Map<BlockPos, com.lealex.alchyx.animation.BlockPose> poses = new java.util.LinkedHashMap<>(); // blocks reshaped (studio's Shape tab)
+    private final List<com.lealex.alchyx.animation.MiniStructure.Own> ownMinis = new ArrayList<>(); // minis built in the studio
     private int motionsVersion = 0; // changes with every change of the motions or marks (the client's animation follows it)
 
     private record MotionAt(BlockPos offset, com.lealex.alchyx.animation.Motion motion, com.lealex.alchyx.animation.MotionSetup setup) {
@@ -652,6 +674,30 @@ public abstract class MultiblockCoreBlockEntity extends BlockEntity {
     /** When each motion plays and what a change sets (Machine Studio), by offset; a motion without one plays all the time. */
     public Map<BlockPos, com.lealex.alchyx.animation.MotionSetup> setups() {
         return java.util.Collections.unmodifiableMap(setups);
+    }
+
+    /** The mini structures a player built for this machine in the Machine Studio (a "mini" anchor names them "#0", "#1"...). */
+    public List<com.lealex.alchyx.animation.MiniStructure.Own> ownMinis() {
+        return java.util.Collections.unmodifiableList(ownMinis);
+    }
+
+    /**
+     * Keeps these minis built in the studio (at most {@link com.lealex.alchyx.animation.MiniStructure#MAX_OWN}, each
+     * tidied). Server side; call before {@link #setStudio} so its "mini" anchors can name them.
+     */
+    public void setOwnMinis(List<com.lealex.alchyx.animation.MiniStructure.Own> wanted) {
+        if (level == null || level.isClientSide()) return;
+        List<com.lealex.alchyx.animation.MiniStructure.Own> kept = new ArrayList<>();
+        for (com.lealex.alchyx.animation.MiniStructure.Own own : wanted) {
+            if (kept.size() >= com.lealex.alchyx.animation.MiniStructure.MAX_OWN) break;
+            com.lealex.alchyx.animation.MiniStructure.Own tidy = own == null ? null : own.tidy();
+            if (tidy != null) kept.add(tidy);
+        }
+        if (kept.equals(ownMinis)) return;
+        ownMinis.clear();
+        ownMinis.addAll(kept);
+        setChanged();
+        syncToClients();
     }
 
     /** The blocks a player reshaped with the Machine Studio (moved, turned, sized, hidden), by offset; read only. */
@@ -749,6 +795,15 @@ public abstract class MultiblockCoreBlockEntity extends BlockEntity {
                 case SOUND -> mark.id() != null && net.minecraft.core.registries.BuiltInRegistries.SOUND_EVENT.containsKey(mark.id())
                         && com.lealex.alchyx.animation.StudioMark.SOUND_REPEATS.contains(mark.yaw());
                 case ITEM -> com.lealex.alchyx.animation.StudioMark.DISPLAYS.contains(mark.what());
+                case MINI -> {
+                    if (mark.what().startsWith("#")) {
+                        Identifier own = com.lealex.alchyx.animation.MiniStructure.figureFor(mark.what());
+                        int index = own == null ? -1 : com.lealex.alchyx.animation.MiniStructure.ownIndex(own);
+                        yield index >= 0 && index < ownMinis.size();
+                    }
+                    yield mark.id() != null && (com.lealex.alchyx.animation.MachineMinis.get(mark.id()) != null
+                            || com.lealex.alchyx.multiblock.MultiblockPatterns.get(mark.id()) != null);
+                }
             };
             if (!allowed || !taken.add(at.immutable())) continue;
             keptMarks.add(new com.lealex.alchyx.animation.StudioMark(at.immutable(), mark.kind(), mark.what(), Math.floorMod(mark.yaw(), 360),
@@ -1286,6 +1341,7 @@ public abstract class MultiblockCoreBlockEntity extends BlockEntity {
             poses.forEach((offset, pose) -> list.add(new PoseAt(offset, pose)));
             output.store("alchyx_poses", PoseAt.CODEC.listOf(), list);
         }
+        if (!ownMinis.isEmpty()) output.store("alchyx_minis", com.lealex.alchyx.animation.MiniStructure.Own.CODEC.listOf(), List.copyOf(ownMinis));
     }
 
     private static final com.mojang.serialization.Codec<Map<String, Integer>> LEVELS_CODEC =
@@ -1331,6 +1387,12 @@ public abstract class MultiblockCoreBlockEntity extends BlockEntity {
         boolean readHide = input.getBooleanOr("alchyx_hide_file", false);
         Map<BlockPos, com.lealex.alchyx.animation.BlockPose> readPoses = new java.util.LinkedHashMap<>();
         input.read("alchyx_poses", PoseAt.CODEC.listOf()).ifPresent(list -> list.forEach(at -> readPoses.put(at.offset(), at.pose())));
+        List<com.lealex.alchyx.animation.MiniStructure.Own> readMinis = input.read("alchyx_minis",
+                com.lealex.alchyx.animation.MiniStructure.Own.CODEC.listOf()).orElse(List.of());
+        if (!readMinis.equals(ownMinis)) { // (the same objects while nothing changed: a mini's picture isn't rebuilt each sync)
+            ownMinis.clear();
+            ownMinis.addAll(readMinis);
+        }
         if (!read.equals(motions) || !readSetups.equals(setups) || !readMarks.equals(marks) || readHide != hideFileAnimation
                 || !readPoses.equals(poses)) {
             hideFileAnimation = readHide;

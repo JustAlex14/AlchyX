@@ -14,10 +14,14 @@ import java.util.List;
  * the anchors, and whether the machine's own animation is off. Offsets are from the core in the pattern's own frame
  * (like the file's anchors), so it fits a machine turned any way.
  */
-public record StudioSave(List<Moving> motions, List<StudioMark> marks, boolean hideFile, List<Posed> poses) {
+public record StudioSave(List<Moving> motions, List<StudioMark> marks, boolean hideFile, List<Posed> poses, List<MiniStructure.Own> minis) {
 
     public StudioSave(List<Moving> motions, List<StudioMark> marks, boolean hideFile) {
-        this(motions, marks, hideFile, List.of());
+        this(motions, marks, hideFile, List.of(), List.of());
+    }
+
+    public StudioSave(List<Moving> motions, List<StudioMark> marks, boolean hideFile, List<Posed> poses) {
+        this(motions, marks, hideFile, poses, List.of());
     }
 
     /** One block the Shape tab reshaped: its offset, and how (moved, turned, sized, hidden). */
@@ -41,7 +45,8 @@ public record StudioSave(List<Moving> motions, List<StudioMark> marks, boolean h
             Moving.CODEC.listOf().optionalFieldOf("motions", List.of()).forGetter(StudioSave::motions),
             StudioMark.CODEC.listOf().optionalFieldOf("marks", List.of()).forGetter(StudioSave::marks),
             Codec.BOOL.optionalFieldOf("hide_file", false).forGetter(StudioSave::hideFile),
-            Posed.CODEC.listOf().optionalFieldOf("poses", List.of()).forGetter(StudioSave::poses)
+            Posed.CODEC.listOf().optionalFieldOf("poses", List.of()).forGetter(StudioSave::poses),
+            MiniStructure.Own.CODEC.listOf().optionalFieldOf("minis", List.of()).forGetter(StudioSave::minis)
     ).apply(instance, StudioSave::new));
 
     /** The same turned by {@code rotation} (offsets, travel spots, and the headings of figures and mod effects). */
@@ -57,13 +62,14 @@ public record StudioSave(List<Moving> motions, List<StudioMark> marks, boolean h
         for (Moving moving : motions) movingTurned.add(new Moving(moving.offset().rotate(rotation), moving.motion(), moving.setup()));
         List<StudioMark> marksTurned = new ArrayList<>();
         for (StudioMark mark : marks) {
-            boolean heading = mark.kind() == StudioMark.Kind.FIGURE || mark.kind() == StudioMark.Kind.EFFECT;
+            boolean heading = mark.kind() == StudioMark.Kind.FIGURE || mark.kind() == StudioMark.Kind.EFFECT
+                    || mark.kind() == StudioMark.Kind.MINI;
             marksTurned.add(new StudioMark(mark.offset().rotate(rotation), mark.kind(), mark.what(),
                     heading ? Math.floorMod(mark.yaw() + quarters * 90, 360) : mark.yaw(), mark.to().map(to -> to.rotate(rotation)),
                     mark.times(), mark.items(), mark.shows()));
         }
         List<Posed> posesTurned = new ArrayList<>();
         for (Posed posed : poses) posesTurned.add(new Posed(posed.offset().rotate(rotation), posed.pose().turned(rotation)));
-        return new StudioSave(movingTurned, marksTurned, hideFile, posesTurned);
+        return new StudioSave(movingTurned, marksTurned, hideFile, posesTurned, minis);
     }
 }

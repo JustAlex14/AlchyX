@@ -1,10 +1,13 @@
 // The Egg Hatchery's recipe takes an egg and gives nothing: this script decides, as the operation starts, which
 // spawn egg it will give. The spawner on top shows that mob turning inside it while the egg hatches, the "result"
 // display (the item anchors that float "output"/"result") shows the spawn egg, and the same egg comes out at the end.
-// Slots: inputs first (slot 0: the egg), then outputs (slot 1: the spawn egg).
+// Slots: inputs first (slot 0: the egg, slot 1: blaze powder, the heat), then outputs (slot 2: the spawn egg).
+// The heat makes it hatch faster: each blaze powder adds 25% (it isn't used up). The animation, and the mini
+// structures on the roof, play faster with it.
 
 const HATCHERY = 'mypack:egg_hatchery_core'
-const OUTPUT_SLOT = 1
+const HEAT_SLOT = 1
+const OUTPUT_SLOT = 2
 const SPAWNER = 'spawner' // the pattern's anchor on the spawner (see data/mypack/multiblock/egg_hatchery.json)
 // Never these (bosses, and things that make no sense out of an egg)
 const NEVER = ['minecraft:ender_dragon_spawn_egg', 'minecraft:wither_spawn_egg', 'minecraft:elder_guardian_spawn_egg',
@@ -60,4 +63,11 @@ AlchyXEvents.operationFinished(HATCHERY, event => {
   let egg = shown.isEmpty() ? randomEgg() : String(shown.id)
   event.machine.setItem(OUTPUT_SLOT, Item.of(egg))
   // The spawner keeps showing the last mob until the next egg starts
+})
+
+AlchyXEvents.tick(HATCHERY, event => {
+  // The heat: 1x with none, 2x with 4 blaze powder, 17x with a full stack
+  let heat = event.machine.getItem(HEAT_SLOT)
+  let powder = heat.id == 'minecraft:blaze_powder' ? heat.count : 0
+  event.machine.setSpeed(1 + powder * 0.25)
 })

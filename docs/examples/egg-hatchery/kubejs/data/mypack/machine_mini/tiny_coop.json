@@ -1,0 +1,28 @@
+{
+  "name": "Tiny coop",
+  "blocks": [
+    {"at": [-1, 0, -1], "block": "minecraft:oak_planks"}, {"at": [0, 0, -1], "block": "minecraft:oak_planks"}, {"at": [1, 0, -1], "block": "minecraft:oak_planks"},
+    {"at": [-1, 0, 0], "block": "minecraft:oak_planks"}, {"at": [0, 0, 0], "block": "minecraft:oak_planks"}, {"at": [1, 0, 0], "block": "minecraft:oak_planks"},
+    {"at": [-1, 0, 1], "block": "minecraft:oak_planks"}, {"at": [0, 0, 1], "block": "minecraft:oak_planks"}, {"at": [1, 0, 1], "block": "minecraft:oak_planks"},
+    {"at": [-1, 1, -1], "block": "minecraft:oak_fence"}, {"at": [1, 1, -1], "block": "minecraft:oak_fence"},
+    {"at": [-1, 1, 1], "block": "minecraft:oak_fence"}, {"at": [1, 1, 1], "block": "minecraft:oak_fence"},
+    {"at": [0, 1, 0], "block": "minecraft:hay_block"},
+    {"at": [-1, 2, -1], "block": "minecraft:oak_fence"}, {"at": [1, 2, -1], "block": "minecraft:oak_fence"},
+    {"at": [-1, 2, 1], "block": "minecraft:oak_fence"}, {"at": [1, 2, 1], "block": "minecraft:oak_fence"},
+    {"at": [-1, 3, -1], "block": "minecraft:dark_oak_slab"}, {"at": [0, 3, -1], "block": "minecraft:dark_oak_slab"}, {"at": [1, 3, -1], "block": "minecraft:dark_oak_slab"},
+    {"at": [-1, 3, 0], "block": "minecraft:dark_oak_slab"}, {"at": [0, 3, 0], "block": "minecraft:dark_oak_slab"}, {"at": [1, 3, 0], "block": "minecraft:dark_oak_slab"},
+    {"at": [-1, 3, 1], "block": "minecraft:dark_oak_slab"}, {"at": [0, 3, 1], "block": "minecraft:dark_oak_slab"},
+    {"at": [1, 3, 1], "block": "minecraft:cobblestone_wall", "state": {"up": true}}
+  ],
+  "anchors": {"nest": [0, 1, 0], "roost": [0, 2, 0], "chimney": [1, 4, 1]},
+  "effects": [
+    {"type": "block_move", "when": "working", "interval": 40, "targets": "nest", "direction": "up", "hide": true,
+     "keyframes": [{"t": 0, "move": 0}, {"t": 20, "move": 0.15}, {"t": 40, "move": 0}]},
+    {"type": "figure", "entity": "minecraft:chicken", "at": "roost", "yaw": 180, "action": "flap"},
+    {"type": "particle", "when": "working", "interval": 6, "particle": "minecraft:campfire_cosy_smoke", "at": "chimney",
+     "spread": [0.05, 0, 0.05], "count": 1, "speed": 0.01},
+    {"type": "sound", "when": "start", "sound": "minecraft:entity.chicken.ambient", "at": "roost", "pitch": 1.6}
+  ],
+  "length": 40,
+  "size": 0.25
+}

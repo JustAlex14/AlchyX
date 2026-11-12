@@ -70,7 +70,7 @@ public final class FigureDrawer {
         if (effect.action() == Effect.FigureAction.SPIN) yaw = Mth.wrapDegrees(yaw + time * 6.0F);
         int light = LevelRenderer.getLightCoords(level, BlockPos.containing(feet.add(0, 0.5, 0)));
         ItemStack display = effect.display().map(displays).orElse(ItemStack.EMPTY);
-        CodedFigure.Context context = new CodedFigure.Context(display, working, time, light, owner, feet, yaw, partialTicks);
+        CodedFigure.Context context = new CodedFigure.Context(display, working, time, light, owner, feet, yaw, partialTicks, effect.scale());
 
         if (effect.figure().isPresent()) {
             CodedFigure coded = Figures.get(effect.figure().get());

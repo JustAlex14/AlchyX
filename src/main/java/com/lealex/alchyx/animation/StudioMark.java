@@ -36,6 +36,9 @@ import java.util.Optional;
  *       turned by {@code yaw} degrees;</li>
  *   <li>{@link Kind#SOUND}: a sound of that id plays there as the work reaches its start (its show time), once,
  *       or again every {@code yaw} ticks until its end when {@code yaw} is more than 0.</li>
+ *   <li>{@link Kind#MINI}: a mini structure stands there ({@link MiniStructure}), turned by {@code yaw} degrees:
+ *       {@code what} is a mini file's or a multiblock's id, or "#n" for the machine's own mini number n; its size
+ *       (one mini block, in blocks) is its one entry in {@code items}.</li>
  * </ul>
  * {@code what} is the particle type, the entity type or the display. {@link Times}: when in the work it shows, and
  * when a traveling item leaves and arrives.
@@ -158,7 +161,7 @@ public record StudioMark(BlockPos offset, Kind kind, String what, int yaw, Optio
     }
 
     public enum Kind implements StringRepresentable {
-        PARTICLES("particles"), FIGURE("figure"), ITEM("item"), SOUND("sound"), EFFECT("effect");
+        PARTICLES("particles"), FIGURE("figure"), ITEM("item"), SOUND("sound"), EFFECT("effect"), MINI("mini");
 
         public static final Codec<Kind> CODEC = StringRepresentable.fromEnum(Kind::values);
         private final String name;
@@ -239,9 +242,25 @@ public record StudioMark(BlockPos offset, Kind kind, String what, int yaw, Optio
                 action == Effect.FigureAction.STILL ? List.of() : List.of(action.getSerializedName()), List.of());
     }
 
+    /** A mini's size: one of its blocks, in blocks of the machine. */
+    public float size() {
+        if (kind == Kind.MINI && !items.isEmpty()) {
+            try {
+                return Math.max(0.05F, Math.min(1.0F, Float.parseFloat(items.getFirst())));
+            } catch (NumberFormatException ignored) {
+            }
+        }
+        return 0.25F;
+    }
+
+    public StudioMark withSize(float size) {
+        return new StudioMark(offset, kind, what, yaw, to, times, List.of(String.valueOf(Math.max(0.05F, Math.min(1.0F, size)))), List.of());
+    }
+
     /** The same mark with only usable items (at most {@link #MAX_ITEMS}), each with a tidy show. */
     public StudioMark cleaned() {
         if (kind == Kind.FIGURE) return new StudioMark(offset, kind, what, yaw, to, times.tidy(), List.of(), List.of()).withAction(action());
+        if (kind == Kind.MINI) return new StudioMark(offset, kind, what, yaw, Optional.empty(), times.tidy(), List.of(), List.of()).withSize(size());
         if (kind != Kind.ITEM) return new StudioMark(offset, kind, what, yaw, Optional.empty(), times.tidy(), List.of(), List.of());
         List<String> kept = new ArrayList<>();
         List<ItemShow> keptShows = new ArrayList<>();
@@ -332,6 +351,12 @@ public record StudioMark(BlockPos offset, Kind kind, String what, int yaw, Optio
             case EFFECT -> id == null ? List.of() : List.of(new Effect.Figure(new Timing(Trigger.ALWAYS, 1, 1.0F, 0, Map.of(), Timing.Where.EVERYWHERE).between(from, until),
                     Optional.empty(), Optional.empty(), Optional.of(id), at, Optional.empty(), Optional.of((float) yaw), false,
                     0.0F, 0.0F, 1.0F, false, Optional.empty(), Optional.empty()));
+            case MINI -> {
+                Identifier figure = MiniStructure.figureFor(what);
+                yield figure == null ? List.of() : List.of(new Effect.Figure(new Timing(Trigger.ALWAYS, 1, 1.0F, 0, Map.of(), Timing.Where.EVERYWHERE).between(from, until),
+                        Optional.empty(), Optional.empty(), Optional.of(figure), at, Optional.empty(), Optional.of((float) yaw), false,
+                        0.0F, 0.0F, size(), false, Optional.empty(), Optional.empty()));
+            }
             case FIGURE -> id == null ? List.of() : List.of(new Effect.Figure(new Timing(Trigger.ALWAYS, 1, 1.0F, 0, Map.of(), Timing.Where.EVERYWHERE).between(from, until),
                     Optional.of(id), Optional.empty(), Optional.empty(), at, Optional.empty(), Optional.of((float) yaw), false,
                     0.0F, 0.0F, 1.0F, false, Optional.empty(), Optional.empty(), action(), toTarget));

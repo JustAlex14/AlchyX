@@ -1,25 +1,32 @@
 {
   "core": "mypack:egg_hatchery_core",
   "front": "north",
-  "anchors": {"center": [0, 0, 1], "spawner": [0, 1, 1], "cauldron": [0, -1, 1]},
+  "anchors": {"center": [0, 0, 2], "spawner": [0, 2, 2], "cauldron": [0, -1, 2], "heat": [0, 1, 4]},
   "layers": [
-    ["BBB", "BCB", "BBB"],
-    ["BXB", "G.G", "BPB"],
-    ["BBB", "BSB", "BBB"]
+    ["BBBBB", "BHHHB", "BHCHB", "BHHHB", "BBBBB"],
+    ["LBXBL", "G...G", "G...G", "G...G", "LBPBL"],
+    ["LAGAL", "G...G", "G...G", "G...G", "LMKML"],
+    ["LBBBL", "BBBBB", "BBSBB", "BBBBB", "LBBBL"]
   ],
   "key": {
     "B": {"block": "minecraft:polished_blackstone_bricks", "name": "polished blackstone bricks"},
+    "H": {"block": "minecraft:hay_block", "name": "hay bales (the nest, around the cauldron)"},
+    "C": {"block": "minecraft:cauldron", "name": "an empty cauldron (the floor's middle)"},
+    "L": {"block": "minecraft:stripped_dark_oak_log", "state": {"axis": "y"}, "name": "stripped dark oak logs (the corner posts)"},
     "G": {"block": "minecraft:glass", "name": "glass"},
-    "C": {"block": "minecraft:cauldron", "name": "an empty cauldron (under the center)"},
-    "S": {"block": "minecraft:spawner", "name": "a spawner (over the center)"},
-    "P": {"block": "minecraft:piston", "state": {"facing": "north"}, "name": "a piston facing the center (behind it)"},
+    "P": {"block": "minecraft:piston", "state": {"facing": "north"}, "name": "a piston facing the middle (back wall)"},
+    "A": {"block": "minecraft:barrel", "state": {"facing": "north"}, "name": "barrels facing out (front, over the core's sides)"},
+    "M": {"block": "minecraft:composter", "name": "composters (back wall, beside the smoker)"},
+    "K": {"block": "minecraft:smoker", "state": {"facing": "north"}, "name": "a smoker facing the middle (back wall, over the piston)"},
+    "S": {"block": "minecraft:spawner", "name": "a spawner (the roof's middle)"},
     "X": {"core": true},
     ".": {"air": true}
   },
   "result": [
-    ["sss", "sss", "sss"],
-    ["sXs", "s.s", "sss"],
-    ["sss", "sss", "sss"]
+    ["sssss", "sssss", "sssss", "sssss", "sssss"],
+    ["ssXss", "s...s", "s...s", "s...s", "sssss"],
+    ["sssss", "s...s", "s...s", "s...s", "sssss"],
+    ["sssss", "sssss", "sssss", "sssss", "sssss"]
   ],
   "result_key": {
     "s": {"same": true},

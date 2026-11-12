@@ -149,6 +149,8 @@ public final class MiniatureAnimation {
     private int lastCount;
     private long clock;          // its own tick count: only advances while it is prepared
     private long lastTick = Long.MIN_VALUE;
+    private float speed = 1.0F; // ticks of the animation per game tick
+    private float budget;       // a part of a tick, at speeds that aren't whole
 
     /**
      * @param looks   the miniature's blocks by cell, counted from the core cell, turned the way the miniature is
@@ -172,10 +174,18 @@ public final class MiniatureAnimation {
         if (plays.blocks) {
             for (Effect effect : animation.effects()) {
                 if (!effect.timing().where().miniature()) continue;
-                if (effect instanceof Effect.BlockMove move && !move.swap().isEmpty()) changing.addAll(cells(move.targets()));
+                if (effect instanceof Effect.BlockMove move && (!move.swap().isEmpty() || move.hide())) changing.addAll(cells(move.targets()));
                 if (effect instanceof Effect.StateSteps steps) changing.addAll(cells(steps.targets()));
             }
         }
+    }
+
+    /**
+     * Plays at this pace: {@code speed} ticks of the animation per game tick (a mini timed on its parent's work plays
+     * one operation of the parent in its own "length" of ticks). 1 is the usual pace.
+     */
+    public void setSpeed(float speed) {
+        this.speed = Math.max(0.0F, Math.min(40.0F, speed));
     }
 
     /**
@@ -374,9 +384,14 @@ public final class MiniatureAnimation {
         long gameTick = level.getGameTime();
         if (gameTick != lastTick && !Minecraft.getInstance().isPaused()) {
             lastTick = gameTick;
-            tick(level, state, placement);
+            budget += speed;
+            for (int n = 0; budget >= 1.0F && n < 40; n++) {
+                budget -= 1.0F;
+                tick(level, state, placement);
+            }
+            budget = Math.min(budget, 1.0F);
         }
-        float now = clock + partialTicks;
+        float now = clock + budget + partialTicks * speed;
 
         Frame frame = new Frame();
         boolean working = state.working();
@@ -412,6 +427,7 @@ public final class MiniatureAnimation {
                     .add(AnimationEngine.rotate(pose.offset(), turn));
             frame.entries.add(new BlockEntry(pos, pose.rotation(), pose.scale(), moving(level, drawn, lightPos)));
             if (!move.effect().swap().isEmpty()) shown.put(move.cell(), BlockLook.apply(look, move.effect().swap()));
+            else if (move.effect().hide()) shown.remove(move.cell()); // (its copy moves in its place)
         }
         for (Map.Entry<BlockPos, BlockState> cell : shown.entrySet()) {
             if (cell.getValue() == null) continue;

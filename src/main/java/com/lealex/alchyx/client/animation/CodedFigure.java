@@ -25,9 +25,14 @@ public interface CodedFigure {
      * @param at           where it stands in the world (in a miniature: where the miniature is)
      * @param yaw          the heading the pose was turned by (see {@link #submit})
      * @param partialTicks the partial tick alone
+     * @param scale        the size it is drawn at (already applied to the pose)
      */
     record Context(ItemStack display, boolean working, float time, int light, Object owner, Vec3 at, float yaw,
-                   float partialTicks) {}
+                   float partialTicks, float scale) {
+        public Context(ItemStack display, boolean working, float time, int light, Object owner, Vec3 at, float yaw, float partialTicks) {
+            this(display, working, time, light, owner, at, yaw, partialTicks, 1.0F);
+        }
+    }
 
     /**
      * Draws the figure. The pose is at its feet and already turned like an entity's body (it faces the effect's

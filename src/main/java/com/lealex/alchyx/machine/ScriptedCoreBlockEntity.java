@@ -117,7 +117,7 @@ public class ScriptedCoreBlockEntity extends MultiblockCoreBlockEntity implement
 
             @Override
             public boolean isValid(int index, ItemResource resource) {
-                return index < spec.itemInputs();
+                return index < spec.itemInputs() && spec.accepts(index, resource);
             }
 
             @Override

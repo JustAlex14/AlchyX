@@ -27,6 +27,7 @@ public class MachineCoreBlockBuilder extends CardinalBlockBuilder {
     private @Nullable Identifier recipeType;
     private int itemInputs = 1, itemOutputs = 1, fluidInputs = 0, fluidOutputs = 0;
     private int tankCapacity = 8000, energyCapacity = 0, energyInput = 0;
+    private final java.util.Map<Integer, java.util.List<String>> slotFilters = new java.util.HashMap<>();
 
     public MachineCoreBlockBuilder(Identifier id) {
         super(id);
@@ -51,6 +52,15 @@ public class MachineCoreBlockBuilder extends CardinalBlockBuilder {
 
     public MachineCoreBlockBuilder itemOutputs(int count) {
         this.itemOutputs = count;
+        return this;
+    }
+
+    /**
+     * What an input slot takes: item ids and {@code #tag}s, e.g. {@code .slotFilter(1, 'minecraft:blaze_powder')} or
+     * {@code .slotFilter(0, ['minecraft:egg', '#c:eggs'])}. Players, hoppers and pipes can't put anything else in.
+     */
+    public MachineCoreBlockBuilder slotFilter(int slot, String... items) {
+        slotFilters.put(slot, java.util.List.of(items));
         return this;
     }
 
@@ -85,7 +95,7 @@ public class MachineCoreBlockBuilder extends CardinalBlockBuilder {
     @Override
     public Block createObject() {
         MachineSpec spec = new MachineSpec(pattern != null ? pattern : id, recipeType != null ? recipeType : id,
-                itemInputs, itemOutputs, fluidInputs, fluidOutputs, tankCapacity, energyCapacity, energyInput);
+                itemInputs, itemOutputs, fluidInputs, fluidOutputs, tankCapacity, energyCapacity, energyInput, slotFilters);
         return new ScriptedCoreBlock(createProperties(), spec);
     }
 }

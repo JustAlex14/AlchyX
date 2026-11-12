@@ -5,6 +5,8 @@ StartupEvents.registry('block', event => {
     .displayName('Egg Hatchery Core')
     .pattern('mypack:egg_hatchery')
     .itemInputs(2)
+    .slotFilter(0, 'minecraft:egg')          // the egg slot: eggs only
+    .slotFilter(1, 'minecraft:blaze_powder') // the heat slot: blaze powder only
     .itemOutputs(1)
     .texture('side', 'minecraft:block/polished_blackstone_bricks')
     .texture('top', 'minecraft:block/polished_blackstone_bricks')

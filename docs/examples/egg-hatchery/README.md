@@ -10,7 +10,7 @@ up with it.
 
 | File | Goes in |
 |---|---|
-| `kubejs/startup_scripts/egg_hatchery.js` | the core block (`mypack:egg_hatchery_core`): 2 input slots (egg, heat), 1 output slot |
+| `kubejs/startup_scripts/egg_hatchery.js` | the core block (`mypack:egg_hatchery_core`): 2 input slots (egg, heat: each takes only its item, with `slotFilter`), 1 output slot |
 | `kubejs/data/mypack/multiblock/egg_hatchery.json` | the structure, 5 x 4 x 5 |
 | `kubejs/data/mypack/machine_recipe/egg_hatchery.json` | an egg in, 5 seconds |
 | `kubejs/data/mypack/machine_mini/tiny_coop.json` | a mini structure: a little chicken coop, with its own animation |

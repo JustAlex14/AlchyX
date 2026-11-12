@@ -14,6 +14,7 @@ StartupEvents.registry('block', event => {
     .pattern('mypack:crusher')          // data/mypack/multiblock/crusher.json (default: same id as the block)
     .itemInputs(1)                      // slots (0-9 each, default 1 / 1)
     .itemOutputs(2)
+    .slotFilter(0, '#c:ores', 'minecraft:gravel') // what an input slot takes (ids, #tags); not listed: anything
     .fluidInputs(1)                     // tanks (0-2 each, default 0)
     .tankCapacity(4000)                 // mB per tank (default 8000)
     .energy(50000, 500)                 // FE buffer and max FE/t from cables (no energy() = needs none)

@@ -119,7 +119,7 @@ public final class FigureDrawer {
      */
     public static void beforeExtract(net.minecraft.world.entity.Entity entity, Effect.FigureAction action, float time) {
         if (entity instanceof net.minecraft.world.entity.monster.Witch witch) {
-            boolean drinking = action == Effect.FigureAction.SWING && time % 60.0F < 32.0F;
+            boolean drinking = action == Effect.FigureAction.SWING && witchDrinking(time);
             ItemStack hand = witch.getMainHandItem();
             if (drinking && hand.isEmpty()) {
                 witch.setItemSlot(net.minecraft.world.entity.EquipmentSlot.MAINHAND,
@@ -129,6 +129,11 @@ public final class FigureDrawer {
                 witch.setItemSlot(net.minecraft.world.entity.EquipmentSlot.MAINHAND, ItemStack.EMPTY);
             }
         }
+    }
+
+    /** A swinging witch drinks for 1.6 s every 3 s. */
+    private static boolean witchDrinking(float time) {
+        return time % 60.0F < 32.0F;
     }
 
     /** Puts the figure's action on its render state: legs walking, an arm swinging, wings flapping, sitting. */
@@ -149,6 +154,13 @@ public final class FigureDrawer {
                 }
                 if (state instanceof net.minecraft.client.renderer.entity.state.ZombieRenderState zombie) zombie.isAggressive = true;
                 if (state instanceof net.minecraft.client.renderer.entity.state.VillagerRenderState villager) villager.isUnhappy = attack > 0;
+                if (state instanceof net.minecraft.client.renderer.entity.state.WitchRenderState witch && witchDrinking(time)) {
+                    // Head back as it drinks (the potion it holds is put on the entity before: beforeExtract)
+                    float into = (time % 60.0F) / 32.0F; // 0 to 1 through the drink
+                    witch.xRot = -40.0F * Mth.sin(into * Mth.PI);
+                    witch.isHoldingItem = true;
+                    witch.isHoldingPotion = true;
+                }
             }
             case FLAP -> {
                 if (state instanceof net.minecraft.client.renderer.entity.state.ChickenRenderState chicken) {
